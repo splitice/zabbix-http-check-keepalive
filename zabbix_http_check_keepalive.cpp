@@ -1,7 +1,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <stdio.h>
-#include <arpa/inet.h> //inet_addr
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <map>
 #include <errno.h>
@@ -16,7 +16,6 @@
 #include <stdlib.h>
 #include "sysinc.h"
 #include "module.h"
-
 
 extern "C" {
 	#include "common.h"
@@ -36,7 +35,7 @@ int http_resp_startlen = sizeof("HTTP/1.0 ");//or "HTTP 1.1" same length
 #define READSIZE 1024
 #define MAXEVENTS 16
 
-char *socket_path = "\0hck";
+const char *socket_path = "\0hck";
 volatile int running = 1;
 
 using namespace std;
@@ -76,7 +75,6 @@ void check_add(hck_handle* hck, in_addr_t host, unsigned short port, time_t now,
 	struct epoll_event e;
 	int rc;
 	struct hck_details* h;
-
 
 	for (map<int, struct hck_details*>::iterator it = hck->sockets.begin(); it != hck->sockets.end(); it++){
 		h = it->second;
@@ -210,7 +208,11 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			}
 		}
 		if (e.events & EPOLLOUT){
-			h->state = hck_details::writing;
+			// Try and make sure we read everything
+			rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
+			if (rc <= 0){
+				h->state = hck_details::writing;
+			}
 		}
 	}
 	return;
@@ -252,7 +254,7 @@ void handle_cleanup(hck_handle& hck, time_t now){
 	std::vector<int> to_delete;
 
 	for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
-		struct hck_details* h = it->second;
+		h = it->second;
 		if (h->expires < now){
 			to_delete.push_back(it->first);
 		}
@@ -365,6 +367,8 @@ cleanup:
 
 unsigned short execute_check(int fd, const char* addr, unsigned short port, bool retry = true){
 	int rc;
+	unsigned short result;
+
 	in_addr_t inaddr = inet_addr(addr);
 
 	rc = write(fd, &inaddr, sizeof(inaddr));
@@ -375,8 +379,6 @@ unsigned short execute_check(int fd, const char* addr, unsigned short port, bool
 	if (rc < 0){
 		goto error;
 	}
-
-	unsigned short result;
 
 	rc = read(fd, &result, sizeof(result));
 	if (rc < 0){
