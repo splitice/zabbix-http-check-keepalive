@@ -38,6 +38,8 @@ int http_resp_startlen = sizeof("HTTP/1.0 ");//or "HTTP 1.1" same length
 
 #define READSIZE 1024
 #define MAXEVENTS 16
+#define TIMEOUT_RECOVER 3
+#define TIMEOUT_NEW 4
 
 const char *socket_path = "\0hck";
 volatile int running = 1;
@@ -79,8 +81,11 @@ public:
 };
 
 //send result from worker -> process
-void send_result(hck_handle* hck, int sock, unsigned short result){
-	send(sock, &result, sizeof(result), 0);
+bool send_result(hck_handle* hck, int sock, unsigned short result){
+	if (sock == 0) return true;
+
+	int rc = send(sock, &result, sizeof(result), 0);
+	return rc <= 0;
 }
 
 // add a check in the worker
@@ -100,7 +105,7 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 		if (h->state == hck_details::keepalive){
 			h->state = hck_details::recovery;
 			h->position = 0;
-			h->expires = now + 2;
+			h->expires = now + TIMEOUT_RECOVER;
 			h->client_sock = source;
 			h->first = false;
 			return;
@@ -122,7 +127,7 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	rc = connect(socket_desc, &sockaddr, addr.ai_addrlen);
 	if (rc < 0)
 	{
-		if (errno != EAGAIN && errno != EINPROGRESS){
+		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS){
 			perror("error connecting");
 			close(socket_desc);
 			delete h;
@@ -147,7 +152,7 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 		return;
 	}
 
-	h->expires = now + 3;
+	h->expires = now + TIMEOUT_NEW;
 	h->client_sock = source;
 	h->position = 0;
 	h->remote_connection = sockaddr;
@@ -165,7 +170,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 	h = hck.sockets[e.data.fd];
 
-	if (e.events & EPOLLHUP){
+	if (e.events & EPOLLHUP || e.events & EPOLLRDHUP){
 		goto send_failure;
 	}
 
@@ -181,7 +186,10 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	if (h->state == hck_details::writing){
 		rc = send(e.data.fd, http_request + h->position, sizeof(http_request) - h->position, 0);
 		if (rc < 0){
-			if (!h->first && h->position == 0){
+			if (errno == EAGAIN || errno == EWOULDBLOCK){
+				continue;
+			}
+			if (!h->first){
 				goto send_retry;
 			}
 			goto send_failure;
@@ -200,13 +208,20 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		}
 	}
 	else if (h->state == hck_details::reading){
+		int i = http_resp_startlen - h->position;
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 		if (rc <= 0){
+			if (errno == EAGAIN || errno == EWOULDBLOCK){
+				continue;
+			}
+			if (!h->first && h->position == 0){
+				goto send_retry;
+			}
 			goto send_failure;
 		}
 
-		int i = http_resp_startlen - 1 - h->position;
-		if (rc >= i){
+		if (rc > i){
+			i -= 1;
 			if (respbuff[i] > '0' && respbuff[i] < '5'){
 				goto send_ok;
 			}
@@ -227,6 +242,9 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		if (e.events & EPOLLIN || e.events & EPOLLHUP){
 			rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 			if (rc <= 0){
+				if (errno == EAGAIN || errno == EWOULDBLOCK){
+					continue;
+				}
 				h->expires = 0;
 				goto send_retry;
 			}
@@ -235,7 +253,12 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			// Try and make sure we read everything
 			rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 			if (rc <= 0){
-				h->state = hck_details::writing;
+				if (errno == EAGAIN || errno == EWOULDBLOCK){
+					h->state = hck_details::writing;
+				}
+				else{
+					goto send_retry;
+				}
 			}
 		}
 	}
@@ -251,10 +274,14 @@ clear:
 	delete h;
 	return;
 send_ok:
-	send_result(&hck, h->client_sock, 1);
-	h->position = 0;
-	h->state = hck_details::keepalive;
-	h->expires = now + 60;
+	if (!send_result(&hck, h->client_sock, 1)){
+		goto clear;
+	}
+	else{
+		h->position = 0;
+		h->state = hck_details::keepalive;
+		h->expires = now + 60;
+	}
 	return;
 send_failure:
 	if (h->state != hck_details::keepalive){
@@ -376,6 +403,7 @@ void main_thread(){
 				}
 				else{
 					goto cleanup;
+					return;
 				}
 			}
 			else{
@@ -384,7 +412,13 @@ void main_thread(){
 				}
 				else{
 					//error
-					goto cleanup;
+					for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
+						struct hck_details* h = it->second;
+						if (h->client_sock == e.data.fd){
+							h->client_sock = 0;
+						}
+					}
+					close(e.data.fd);
 				}
 			}
 		}
