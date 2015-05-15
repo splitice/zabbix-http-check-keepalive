@@ -14,6 +14,10 @@
 #include <sys/prctl.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <netdb.h>
+#include <functional>
+#include <functional>
+#include <cstring>
 #include "sysinc.h"
 #include "module.h"
 
@@ -40,20 +44,30 @@ volatile int running = 1;
 
 using namespace std;
 
+struct cmp_map {
+	bool operator()(
+		const struct sockaddr& lhs,
+		const struct sockaddr& rhs) const
+	{
+		return std::memcmp(&lhs, &rhs, sizeof(lhs));
+	}
+};
 
 // a check
 struct hck_details {
 	time_t expires;
-	int socket;
 	int client_sock;
-	unsigned short position: 16;
+	int remote_socket;
+	struct sockaddr remote_connection;
+	unsigned short position : 16;
 	enum {
 		connecting,
 		writing,
 		reading,
 		keepalive,
 		recovery
-	} state: 16;
+	} state: 15;
+	bool first : 1;
 };
 
 // the hck system (could be exported outside of zabbix in future)
@@ -61,6 +75,7 @@ class hck_handle {
 public:
 	int epfd;
 	map<int, struct hck_details*> sockets;
+	map<struct sockaddr, int, struct cmp_map> keepalived;
 };
 
 //send result from worker -> process
@@ -69,21 +84,25 @@ void send_result(hck_handle* hck, int sock, unsigned short result){
 }
 
 // add a check in the worker
-void check_add(hck_handle* hck, in_addr_t host, unsigned short port, time_t now, int source){
+void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source){
 	int socket_desc;
-	struct sockaddr_in server;
 	struct epoll_event e;
 	int rc;
 	struct hck_details* h;
+	map<struct sockaddr, int>::iterator it;
 
-	for (map<int, struct hck_details*>::iterator it = hck->sockets.begin(); it != hck->sockets.end(); it++){
-		h = it->second;
+	it = hck->keepalived.find(sockaddr);
+	if (it != hck->keepalived.end()){
+		h = hck->sockets[it->second];
+		hck->keepalived.erase(it->first);
 
+		//Err, it should be....
 		if (h->state == hck_details::keepalive){
 			h->state = hck_details::recovery;
 			h->position = 0;
 			h->expires = now + 2;
 			h->client_sock = source;
+			h->first = false;
 			return;
 		}
 	}
@@ -94,19 +113,18 @@ void check_add(hck_handle* hck, in_addr_t host, unsigned short port, time_t now,
 	socket_desc = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if (socket_desc == -1)
 	{
+		perror("error creating socket");
+		delete h;
 		return;
 	}
 
-	server.sin_addr.s_addr = host;
-	server.sin_family = AF_INET;
-	server.sin_port = htons(port);
-
 	//Connect to remote server
-	rc = connect(socket_desc, (struct sockaddr *)&server, sizeof(server));
+	rc = connect(socket_desc, &sockaddr, addr.ai_addrlen);
 	if (rc < 0)
 	{
 		if (errno != EAGAIN && errno != EINPROGRESS){
 			perror("error connecting");
+			close(socket_desc);
 			delete h;
 			return;
 		}
@@ -124,6 +142,7 @@ void check_add(hck_handle* hck, in_addr_t host, unsigned short port, time_t now,
 	if (rc < 0)
 	{
 		perror("epoll add error");
+		close(socket_desc);
 		delete h;
 		return;
 	}
@@ -131,7 +150,9 @@ void check_add(hck_handle* hck, in_addr_t host, unsigned short port, time_t now,
 	h->expires = now + 3;
 	h->client_sock = source;
 	h->position = 0;
-	h->socket = socket_desc;
+	h->remote_connection = sockaddr;
+	h->remote_socket = socket_desc;
+	h->first = true;
 
 	hck->sockets[socket_desc] = h;
 }
@@ -160,6 +181,9 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	if (h->state == hck_details::writing){
 		rc = send(e.data.fd, http_request + h->position, sizeof(http_request) - h->position, 0);
 		if (rc < 0){
+			if (!h->first && h->position == 0){
+				goto send_retry;
+			}
 			goto send_failure;
 		}
 		h->position += rc;
@@ -196,7 +220,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	else if (h->state == hck_details::keepalive){
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 		if (rc <= 0){
-			goto send_failure;
+			goto clear;
 		}
 	}
 	else if (h->state == hck_details::recovery){
@@ -218,8 +242,12 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	return;
 
 clear:
-	hck.sockets.erase(h->socket);
-	close(h->socket);
+	hck.sockets.erase(h->remote_socket);
+	close(h->remote_socket);
+	if (h->state == hck_details::keepalive){
+		hck.keepalived.erase(h->remote_connection);
+	}
+
 	delete h;
 	return;
 send_ok:
@@ -240,13 +268,22 @@ send_retry:
 
 // handle internal communication
 void handle_internalsock(hck_handle& hck, int socket, time_t now){
-	in_addr_t inaddr;
-	unsigned short port;
+	struct addrinfo servinfo;
+	struct sockaddr sa;
+	int rc;
 
-	recv(socket, &inaddr, sizeof(inaddr), 0);
-	recv(socket, &port, sizeof(port), 0);
+	rc = recv(socket, &sa, sizeof(sa), 0);
+	if (rc <= 0){
+		close(socket);
+		return;
+	}
+	rc = recv(socket, &servinfo, sizeof(addrinfo), 0);
+	if (rc <= 0){
+		close(socket);
+		return;
+	}
 
-	check_add(&hck, inaddr, port, now, socket);
+	check_add(&hck, servinfo, sa, now, socket);
 }
 
 void handle_cleanup(hck_handle& hck, time_t now){
@@ -264,8 +301,8 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		if (h->state != hck_details::keepalive){
 			send_result(&hck, h->client_sock, false);
 		}
-		hck.sockets.erase(h->socket);
-		close(h->socket);
+		hck.sockets.erase(h->remote_socket);
+		close(h->remote_socket);
 		delete h;
 	}
 }
@@ -365,22 +402,36 @@ cleanup:
 	}
 }
 
-unsigned short execute_check(int fd, const char* addr, unsigned short port, bool retry = true){
+unsigned short execute_check(int fd, const char* addr, const char* port, bool retry = true){
 	int rc;
 	unsigned short result;
+	struct addrinfo hints;
+	struct addrinfo *servinfo;  // will point to the results
 
-	in_addr_t inaddr = inet_addr(addr);
+	memset(&hints, 0, sizeof hints); // make sure the struct is empty
+	memset(&servinfo, 0, sizeof servinfo); // make sure the struct is empty
 
-	rc = write(fd, &inaddr, sizeof(inaddr));
+	hints.ai_family = AF_UNSPEC;     // don't care IPv4 or IPv6
+	hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
+	hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
+
+	if ((rc = getaddrinfo(addr, port, &hints, &servinfo)) != 0) {
+		goto error;
+	}
+
+	rc = send(fd, (void*)servinfo->ai_addr, sizeof(*servinfo->ai_addr), 0);
+	if (rc < 0){
+		freeaddrinfo(servinfo); // free the linked-list
+		goto error;
+	}
+
+	rc = send(fd, (void*)servinfo, sizeof(addrinfo), 0);
+	freeaddrinfo(servinfo); // free the linked-list
 	if (rc < 0){
 		goto error;
 	}
-	rc = write(fd, &port, sizeof(port));
-	if (rc < 0){
-		goto error;
-	}
 
-	rc = read(fd, &result, sizeof(result));
+	rc = recv(fd, &result, sizeof(result), 0);
 	if (rc < 0){
 		goto error;
 	}
@@ -499,7 +550,6 @@ extern "C" {
 	{
 		unsigned short res;
 		char *param1, *param2;
-		int port;
 
 		if (hck_fd == -1){
 			hck_fd = connect_to_hck();
@@ -512,11 +562,14 @@ extern "C" {
 
 		param1 = get_rparam(request, 0);
 		param2 = get_rparam(request, 1);
-		port = atoi(param2);
 
-		res = execute_check(hck_fd, param1, port);
+		res = execute_check(hck_fd, param1, param2);
 
+		//an error occured
 		if (res > 1){
+			close(hck_fd);
+			hck_fd = -1;
+
 			res = 0;
 		}
 
