@@ -170,25 +170,24 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 	h = hck.sockets[e.data.fd];
 
-	if (e.events & EPOLLHUP || e.events & EPOLLRDHUP){
-		goto send_failure;
-	}
-
 	if (h->state == hck_details::connecting){
-		e.events = EPOLLOUT;
-		rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
-		if (rc < 0)
-		{
-			perror("epoll mod error");
+		if (e.events & EPOLLIN || e.events & EPOLLOUT){
+			e.events = EPOLLOUT;
+			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
+			if (rc < 0)
+			{
+				perror("epoll mod error");
+			}
+			h->state = hck_details::writing;
 		}
-		h->state = hck_details::writing;
 	}
 	if (h->state == hck_details::writing){
 		rc = send(e.data.fd, http_request + h->position, sizeof(http_request) - h->position, 0);
 		if (rc < 0){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
-				continue;
+				return;
 			}
+			//fprintf(stdout, "failed to send data (%d)\n", errno);
 			if (!h->first){
 				goto send_retry;
 			}
@@ -212,8 +211,9 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 		if (rc <= 0){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
-				continue;
+				return;
 			}
+			//fprintf(stdout, "failed to recv data (%d)\n", errno);
 			if (!h->first && h->position == 0){
 				goto send_retry;
 			}
@@ -226,6 +226,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				goto send_ok;
 			}
 			else{
+				//fprintf(stdout, "invalid response (char: %d)\n", respbuff[i] - '0');
 				goto send_failure;
 			}
 		}
@@ -243,7 +244,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 			if (rc <= 0){
 				if (errno == EAGAIN || errno == EWOULDBLOCK){
-					continue;
+					return;
 				}
 				h->expires = 0;
 				goto send_retry;
@@ -262,6 +263,17 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			}
 		}
 	}
+
+	if (e.events & EPOLLOUT == 0 && e.events & EPOLLIN == 0 && (e.events & EPOLLHUP || e.events & EPOLLRDHUP)){
+		if (h->state == hck_details::keepalive){
+			goto clear;
+		}
+		else{
+			//fprintf(stdout, "connection interrupted\n");
+			goto send_failure;
+		}
+	}
+
 	return;
 
 clear:
