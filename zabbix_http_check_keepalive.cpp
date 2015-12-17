@@ -34,6 +34,7 @@ static ZBX_METRIC keys[] =
 };
 
 const char http_request[] = "HEAD / HTTP/1.0\r\nConnection:Keep-Alive\r\n\r\n";
+#define http_request_size (sizeof(http_request) - 1)
 int http_resp_startlen = sizeof("HTTP/1.0 ");//or "HTTP 1.1" same length
 
 #define READSIZE 1024
@@ -182,7 +183,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		}
 	}
 	if (h->state == hck_details::writing){
-		rc = send(e.data.fd, http_request + h->position, sizeof(http_request) - h->position, 0);
+		rc = send(e.data.fd, http_request + h->position, http_request_size - h->position, 0);
 		if (rc < 0){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
@@ -194,7 +195,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			goto send_failure;
 		}
 		h->position += rc;
-		if (h->position == sizeof(http_request)){
+		if (h->position == http_request_size){
 			h->state = hck_details::reading;
 			h->position = 0;
 
