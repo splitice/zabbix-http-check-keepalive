@@ -309,6 +309,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 send_ok:
 	if (!send_result(&hck, h->client_sock, 1)){
+		fprintf(stdout, "failed to send result\n");
 		http_cleanup(hck, h);
 		return;
 	}
