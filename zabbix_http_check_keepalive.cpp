@@ -250,8 +250,8 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	else if (h->state == hck_details::reading){
 		int i = http_resp_startlen - h->position;
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
-		if (rc <= 0){
-			if (rc == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)){
+		if (rc  == -1){
+			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
 			//fprintf(stdout, "failed to recv data (%d)\n", errno);
@@ -284,8 +284,8 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	else if (h->state == hck_details::recovery){
 		if (e.events & EPOLLIN || e.events & EPOLLHUP){
 			rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
-			if (rc <= 0){
-				if (rc == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)){
+			if (rc == -1){
+				if (errno == EAGAIN || errno == EWOULDBLOCK){
 					return;
 				}
 				h->expires = 0;
@@ -295,8 +295,8 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		if (e.events & EPOLLOUT){
 			// Try and make sure we read everything
 			rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
-			if (rc <= 0){
-				if (rc == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)){
+			if (rc == -1){
+				if (errno == EAGAIN || errno == EWOULDBLOCK){
 					h->state = hck_details::writing;
 				}
 				else{
