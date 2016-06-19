@@ -156,8 +156,14 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 		}
 
 
+#ifdef MSG_FASTOPEN
+		e.events = EPOLLIN;
+		h->state = hck_details::reading;
+		h->position = 0;
+#else
 		e.events = EPOLLIN | EPOLLOUT;
 		h->state = hck_details::connecting;
+#endif
 	}
 	else
 	{
