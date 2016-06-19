@@ -126,7 +126,7 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 
 	//Connect to remote server
 #ifdef MSG_FASTOPEN
-	rc = sendto(fd, http_request, http_request_size, MSG_FASTOPEN, &sockaddr, addr.ai_addrlen);
+	rc = sendto(socket_desc, http_request, http_request_size, MSG_FASTOPEN, &sockaddr, addr.ai_addrlen);
 #else
 	rc = connect(socket_desc, &sockaddr, addr.ai_addrlen);
 #endif
