@@ -195,6 +195,7 @@ static void http_cleanup(hck_handle& hck, struct hck_details* h){
 	if (h->state == hck_details::keepalive){
 		hck.keepalived.erase(h->remote_connection);
 	}
+	close(h->client_sock);
 
 	delete h;
 }
