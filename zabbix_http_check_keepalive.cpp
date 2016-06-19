@@ -224,11 +224,11 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	}
 	if (h->state == hck_details::writing){
 		rc = send(e.data.fd, http_request + h->position, http_request_size - h->position, 0);
-		if (rc < 0){
-			if (rc == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)){
+		if (rc == -1){
+			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			//fprintf(stdout, "failed to send data (%d)\n", errno);
+			printf("failed to send data (%d)\n", errno);
 			if (!h->first){
 				goto send_retry;
 			}
@@ -254,7 +254,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			//fprintf(stdout, "failed to recv data (%d)\n", errno);
+			printf("failed to recv data (%d)\n", errno);
 			if (!h->first && h->position == 0){
 				goto send_retry;
 			}
@@ -312,7 +312,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			return;
 		}
 		else{
-			//fprintf(stdout, "connection interrupted\n");
+			printf("connection interrupted\n");
 			goto send_failure;
 		}
 	}
@@ -501,24 +501,29 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
 
 	if ((rc = getaddrinfo(addr, port, &hints, &servinfo)) != 0) {
-		goto error;
+		perror("get addr info failed");
+		return 4;
 	}
 
 	rc = send(fd, (void*)servinfo->ai_addr, sizeof(*servinfo->ai_addr), 0);
 	if (rc < 0){
 		freeaddrinfo(servinfo); // free the linked-list
-		goto error;
+		perror("io error during send (1)");
+		return 4;
 	}
 
 	rc = send(fd, (void*)servinfo, sizeof(addrinfo), 0);
-	freeaddrinfo(servinfo); // free the linked-list
 	if (rc < 0){
-		goto error;
+		freeaddrinfo(servinfo); // free the linked-list
+		perror("io error during send (2)");
+		return 4;
 	}
+	freeaddrinfo(servinfo); // free the linked-list
 
 	rc = recv(fd, &result, sizeof(result), 0);
 	if (rc < 0){
-		goto error;
+		perror("io error during recv");
+		return 4;
 	}
 
 	if (result == 3){
@@ -531,10 +536,6 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	}
 
 	return result;
-
-error:
-	perror("io error");
-	return 4;
 }
 
 int connect_to_hck(){
