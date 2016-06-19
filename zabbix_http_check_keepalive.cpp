@@ -104,7 +104,7 @@ bool send_result(hck_handle* hck, int sock, unsigned short result){
 	return rc >= 0;
 }
 
-static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, time_t now) {
+static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, time_t now, int source) {
 	map<struct sockaddr, int>::iterator it;
 
 	it = hck->keepalived.find(sockaddr);
@@ -139,7 +139,7 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 		perror("error creating remote socket");
 		close(h->client_sock);
 		delete h;
-		return;
+		return NULL;
 	}
 
 	//Connect to remote server
@@ -211,14 +211,14 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source){
 	struct hck_details* h;
 
-	h = keepalive_lookup(hck, sockaddr, now);
+	h = keepalive_lookup(hck, sockaddr, now, source);
 
 	if (h == NULL) {
 		h = create_new_socket(hck, addr, sockaddr, now, source);
 	}
 
 	if (h != NULL) {
-		hck->sockets[socket_desc] = h;
+		hck->sockets[h->remote_socket] = h;
 	}
 }
 
@@ -362,7 +362,7 @@ send_ok:
 		h->position = 0;
 		h->state = hck_details::keepalive;
 		h->expires = now + TIMEOUT_POST;
-		if (hck.keepalived(h->remote_socket) != hck.keepalived.end()) {
+		if (hck.keepalived.find(h->remote_socket) != hck.keepalived.end()) {
 			http_cleanup(hck, h);
 		}
 		else 
