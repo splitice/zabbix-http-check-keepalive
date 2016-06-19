@@ -267,7 +267,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				goto send_ok;
 			}
 			else{
-				//fprintf(stdout, "invalid response (char: %d)\n", respbuff[i] - '0');
+				printf("invalid response (char: %d)\n", respbuff[i] - '0');
 				goto send_failure;
 			}
 		}
