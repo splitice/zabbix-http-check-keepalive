@@ -336,6 +336,9 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 					goto send_retry;
 				}
 			}
+			else if(rc == 0){
+				h->state = hck_details::writing;
+			}
 		}
 	}
 
