@@ -93,6 +93,12 @@ void set_max_open(){
 
 //send result from worker -> process
 bool send_result(hck_handle* hck, int sock, unsigned short result){
+	//Communication socket failed!
+	if (sock == -1) {
+		return true;
+	}
+
+	// Actually send result
 	int rc = send(sock, &result, sizeof(result), 0);
 	return rc >= 0;
 }
@@ -465,7 +471,7 @@ void main_thread(){
 					for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
 						struct hck_details* h = it->second;
 						if (h->client_sock == e.data.fd){
-							h->client_sock = 0;
+							h->client_sock = -1;
 						}
 					}
 					close(e.data.fd);
