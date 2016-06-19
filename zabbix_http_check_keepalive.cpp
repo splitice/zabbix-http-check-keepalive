@@ -81,12 +81,20 @@ public:
 	map<struct sockaddr, int, struct cmp_map> keepalived;
 };
 
+void set_max_open(){
+	struct rlimit limit;
+
+	limit.rlim_cur = 655350;
+	limit.rlim_max = 655350;
+	if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {
+		printf("setrlimit() failed with errno=%d\n", errno);
+	}
+}
+
 //send result from worker -> process
 bool send_result(hck_handle* hck, int sock, unsigned short result){
-	if (sock == 0) return true;
-
 	int rc = send(sock, &result, sizeof(result), 0);
-	return rc <= 0;
+	return rc >= 0;
 }
 
 // add a check in the worker
@@ -309,7 +317,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 send_ok:
 	if (!send_result(&hck, h->client_sock, 1)){
-		fprintf(stdout, "failed to send result\n");
+		perror("failed to send result");
 		http_cleanup(hck, h);
 		return;
 	}
@@ -667,6 +675,7 @@ extern "C" {
 	{
 		if (fork() == 0){
 			zbx_setproctitle("zabbix_proxy: http check keepalive #1");
+			set_max_open();
 			processing_thread();
 			exit(1);
 		}
