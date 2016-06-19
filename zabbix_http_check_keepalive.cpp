@@ -315,30 +315,26 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		}
 	}
 	else if (h->state == hck_details::recovery){
-		if (e.events & EPOLLIN || e.events & EPOLLHUP){
-			rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
-			if (rc == -1){
-				if (errno == EAGAIN || errno == EWOULDBLOCK){
-					return;
-				}
-				h->expires = 0;
+		if (e.events & EPOLLHUP || e.events & EPOLLRDHUP){
+			h->expires = 0;
+			http_cleanup(hck, h);
+			return;
+		}
+
+		// Try and make sure we read everything
+		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
+		if (rc == -1){
+			if (errno == EAGAIN || errno == EWOULDBLOCK){
+				h->state = hck_details::writing;
+				assert(h->position == 0);
+			}
+			else{
 				goto send_retry;
 			}
 		}
-		if (e.events & EPOLLOUT){
-			// Try and make sure we read everything
-			rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
-			if (rc == -1){
-				if (errno == EAGAIN || errno == EWOULDBLOCK){
-					h->state = hck_details::writing;
-				}
-				else{
-					goto send_retry;
-				}
-			}
-			else if(rc == 0){
-				h->state = hck_details::writing;
-			}
+		else if(rc == 0){
+			h->state = hck_details::writing;
+			assert(h->position == 0);
 		}
 	}
 
