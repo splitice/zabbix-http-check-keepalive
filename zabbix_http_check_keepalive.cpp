@@ -127,7 +127,8 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	socket_desc = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if (socket_desc == -1)
 	{
-		perror("error creating socket");
+		perror("error creating remote socket");
+		close(h->client_sock);
 		delete h;
 		return;
 	}
@@ -143,6 +144,7 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS){
 			perror("error connecting");
 			close(socket_desc);
+			close(h->client_sock);
 			delete h;
 			return;
 		}
@@ -176,6 +178,7 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	{
 		perror("epoll add error");
 		close(socket_desc);
+		close(h->client_sock);
 		delete h;
 		return;
 	}
@@ -479,6 +482,7 @@ void main_thread(){
 cleanup:
 	close(fd);
 	for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
+		close(it->second->client_sock);
 		delete it->second;
 	}
 }
@@ -627,6 +631,7 @@ extern "C" {
 	}
 
 	int hck_fd = -1;
+
 	int    zbx_module_hck_check(AGENT_REQUEST *request, AGENT_RESULT *result)
 	{
 		unsigned short res;
