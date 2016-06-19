@@ -181,6 +181,16 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	hck->sockets[socket_desc] = h;
 }
 
+static void http_cleanup(hck_handle& hck, struct hck_details* h){
+	hck.sockets.erase(h->remote_socket);
+	close(h->remote_socket);
+	if (h->state == hck_details::keepalive){
+		hck.keepalived.erase(h->remote_connection);
+	}
+
+	delete h;
+}
+
 // handle a http event
 void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	int rc;
@@ -255,7 +265,8 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	else if (h->state == hck_details::keepalive){
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 		if (rc <= 0){
-			goto clear;
+			http_cleanup(hck, h);
+			return;
 		}
 	}
 	else if (h->state == hck_details::recovery){
@@ -285,7 +296,8 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 	if (e.events & EPOLLOUT == 0 && e.events & EPOLLIN == 0 && (e.events & EPOLLHUP || e.events & EPOLLRDHUP)){
 		if (h->state == hck_details::keepalive){
-			goto clear;
+			http_cleanup(hck, h);
+			return;
 		}
 		else{
 			//fprintf(stdout, "connection interrupted\n");
@@ -295,18 +307,10 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 	return;
 
-clear:
-	hck.sockets.erase(h->remote_socket);
-	close(h->remote_socket);
-	if (h->state == hck_details::keepalive){
-		hck.keepalived.erase(h->remote_connection);
-	}
-
-	delete h;
-	return;
 send_ok:
 	if (!send_result(&hck, h->client_sock, 1)){
-		goto clear;
+		http_cleanup(hck, h);
+		return;
 	}
 	else{
 		h->position = 0;
@@ -318,10 +322,12 @@ send_failure:
 	if (h->state != hck_details::keepalive){
 		send_result(&hck, h->client_sock, 0);
 	}
-	goto clear;
+	http_cleanup(hck, h);
+	return;
 send_retry:
 	send_result(&hck, h->client_sock, 3);
-	goto clear;
+	http_cleanup(hck, h);
+	return;
 }
 
 // handle internal communication
