@@ -362,7 +362,7 @@ send_ok:
 		h->position = 0;
 		h->state = hck_details::keepalive;
 		h->expires = now + TIMEOUT_POST;
-		if (hck.keepalived.find(h->remote_socket) != hck.keepalived.end()) {
+		if (hck.keepalived.find(h->remote_connection) != hck.keepalived.end()) {
 			http_cleanup(hck, h);
 		}
 		else 
