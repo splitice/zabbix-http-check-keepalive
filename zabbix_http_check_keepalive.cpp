@@ -160,8 +160,8 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 
 
 #ifdef MSG_FASTOPEN
-		e.events = EPOLLIN;
-		h->state = hck_details::reading;
+		e.events = EPOLLOUT;
+		h->state = hck_details::writing;
 		h->position = 0;
 #else
 		e.events = EPOLLIN | EPOLLOUT;
