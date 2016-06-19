@@ -105,12 +105,11 @@ bool send_result(hck_handle* hck, int sock, unsigned short result){
 }
 
 static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, time_t now) {
-
 	map<struct sockaddr, int>::iterator it;
 
 	it = hck->keepalived.find(sockaddr);
 	if (it != hck->keepalived.end()) {
-		h = hck->sockets[it->second];
+		struct hck_details* h = hck->sockets[it->second];
 		hck->keepalived.erase(it->first);
 
 		//Err, it should be....
@@ -128,7 +127,10 @@ static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, 
 }
 
 static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source) {
-	h = new struct hck_details;
+	struct hck_details* h = new struct hck_details;
+	int socket_desc;
+	struct epoll_event e;
+	int rc;
 
 	//Create socket
 	socket_desc = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
@@ -207,9 +209,6 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 
 // add a check in the worker
 void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source){
-	int socket_desc;
-	struct epoll_event e;
-	int rc;
 	struct hck_details* h;
 
 	h = keepalive_lookup(hck, sockaddr, now);
@@ -368,8 +367,7 @@ send_ok:
 		}
 		else 
 		{
-			hck.keepalived[h->remote_connection] = h;
-			hck.sockets.erase(h->remote_socket);
+			hck.keepalived[h->remote_connection] = h->remote_socket;
 		}
 	}
 	return;
