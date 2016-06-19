@@ -125,7 +125,11 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	}
 
 	//Connect to remote server
+#ifdef MSG_FASTOPEN
+	rc = sendto(fd, http_request, http_request_size, MSG_FASTOPEN, &sockaddr, addr.ai_addrlen);
+#else
 	rc = connect(socket_desc, &sockaddr, addr.ai_addrlen);
+#endif
 	if (rc < 0)
 	{
 		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS){
@@ -139,9 +143,24 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 		e.events = EPOLLIN | EPOLLOUT;
 		h->state = hck_details::connecting;
 	}
-	else{
+	else
+	{
+#ifdef MSG_FASTOPEN
+		if (rc < http_request_size){
+			e.events = EPOLLOUT;
+			h->state = hck_details::writing;
+			h->position = rc;
+		}
+		else{
+			e.events = EPOLLIN;
+			h->state = hck_details::reading;
+			h->position = 0;
+		}
+#else
 		e.events = EPOLLOUT;
 		h->state = hck_details::writing;
+		h->position = 0;
+#endif
 	}
 	e.data.fd = socket_desc;
 	rc = epoll_ctl(hck->epfd, EPOLL_CTL_ADD, socket_desc, &e);
@@ -155,7 +174,6 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 
 	h->expires = now + TIMEOUT_NEW;
 	h->client_sock = source;
-	h->position = 0;
 	h->remote_connection = sockaddr;
 	h->remote_socket = socket_desc;
 	h->first = true;
