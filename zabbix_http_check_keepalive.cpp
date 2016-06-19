@@ -41,6 +41,7 @@ int http_resp_startlen = sizeof("HTTP/1.0 ");//or "HTTP 1.1" same length
 #define MAXEVENTS 16
 #define TIMEOUT_RECOVER 3
 #define TIMEOUT_NEW 4
+#define TIMEOUT_POST 60
 
 const char *socket_path = "\0hck";
 volatile int running = 1;
@@ -103,30 +104,30 @@ bool send_result(hck_handle* hck, int sock, unsigned short result){
 	return rc >= 0;
 }
 
-// add a check in the worker
-void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source){
-	int socket_desc;
-	struct epoll_event e;
-	int rc;
-	struct hck_details* h;
+static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, time_t now) {
+
 	map<struct sockaddr, int>::iterator it;
 
 	it = hck->keepalived.find(sockaddr);
-	if (it != hck->keepalived.end()){
+	if (it != hck->keepalived.end()) {
 		h = hck->sockets[it->second];
 		hck->keepalived.erase(it->first);
 
 		//Err, it should be....
-		if (h->state == hck_details::keepalive){
+		if (h->state == hck_details::keepalive) {
 			h->state = hck_details::recovery;
 			h->position = 0;
 			h->expires = now + TIMEOUT_RECOVER;
 			h->client_sock = source;
 			h->first = false;
-			return;
+			return h;
 		}
 	}
 
+	return NULL;
+}
+
+static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source) {
 	h = new struct hck_details;
 
 	//Create socket
@@ -147,12 +148,12 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 #endif
 	if (rc < 0)
 	{
-		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS){
+		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS) {
 			perror("error connecting");
 			close(socket_desc);
 			close(h->client_sock);
 			delete h;
-			return;
+			return NULL;
 		}
 
 
@@ -168,12 +169,12 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	else
 	{
 #ifdef MSG_FASTOPEN
-		if (rc < http_request_size){
+		if (rc < http_request_size) {
 			e.events = EPOLLOUT;
 			h->state = hck_details::writing;
 			h->position = rc;
 		}
-		else{
+		else {
 			e.events = EPOLLIN;
 			h->state = hck_details::reading;
 			h->position = 0;
@@ -192,7 +193,7 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 		close(socket_desc);
 		close(h->client_sock);
 		delete h;
-		return;
+		return NULL;
 	}
 
 	h->expires = now + TIMEOUT_NEW;
@@ -201,17 +202,38 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	h->remote_socket = socket_desc;
 	h->first = true;
 
-	hck->sockets[socket_desc] = h;
+	return h;
+}
+
+// add a check in the worker
+void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source){
+	int socket_desc;
+	struct epoll_event e;
+	int rc;
+	struct hck_details* h;
+
+	h = keepalive_lookup(hck, sockaddr, now);
+
+	if (h == NULL) {
+		h = create_new_socket(hck, addr, sockaddr, now, source);
+	}
+
+	if (h != NULL) {
+		hck->sockets[socket_desc] = h;
+	}
 }
 
 static void http_cleanup(hck_handle& hck, struct hck_details* h){
-	hck.sockets.erase(h->remote_socket);
-	close(h->remote_socket);
 	if (h->state == hck_details::keepalive){
 		hck.keepalived.erase(h->remote_connection);
 	}
 	close(h->client_sock);
 
+	//Remove from map
+	hck.sockets.erase(h->remote_socket);
+	//Now we can release the socket
+	close(h->remote_socket);
+	//Finally free memory
 	delete h;
 }
 
@@ -340,7 +362,15 @@ send_ok:
 	else{
 		h->position = 0;
 		h->state = hck_details::keepalive;
-		h->expires = now + 60;
+		h->expires = now + TIMEOUT_POST;
+		if (hck.keepalived(h->remote_socket) != hck.keepalived.end()) {
+			http_cleanup(hck, h);
+		}
+		else 
+		{
+			hck.keepalived[h->remote_connection] = h;
+			hck.sockets.erase(h->remote_socket);
+		}
 	}
 	return;
 send_failure:
@@ -486,7 +516,7 @@ void main_thread(){
 			}
 		}
 
-		if (now != lasttime){
+		if (now > lasttime){
 			lasttime = now;
 			handle_cleanup(hck, now);
 		}
