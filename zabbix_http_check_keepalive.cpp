@@ -386,11 +386,12 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		}
 	}
 	for (std::vector<int>::iterator it = to_delete.begin(); it != to_delete.end(); it++){
+		int idx = *it;
 		h = hck.sockets[*it];
 		if (h->state != hck_details::keepalive){
 			send_result(&hck, h->client_sock, false);
 		}
-		hck.sockets.erase(h->remote_socket);
+		hck.sockets.erase(idx);
 		close(h->remote_socket);
 		delete h;
 	}
