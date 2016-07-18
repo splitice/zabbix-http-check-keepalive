@@ -120,8 +120,7 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 	return NULL;
 }
 
-
-static struct int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr, bool fastopen = true) {
+static int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr, bool fastopen = true) {
 	int socket_desc;
 	int rc;
 
