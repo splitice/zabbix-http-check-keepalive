@@ -380,9 +380,11 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			i -= 1;
 			if (respbuff[i] > '0' && respbuff[i] < '5'){
 				uint8_t nls = 0;
-				for (; i < rc; i++){
+				//minimum of 2 places, this char and space
+				//4 would be standards compliant for "200 "
+				for (i+=2; i < rc; i++){
 					if (respbuff[i] == '\n'){
-						if (++nls){
+						if (++nls == 2){
 							goto send_ok;
 						}
 					}
@@ -407,7 +409,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		uint8_t nls = h->position;
 		for (int i = 0; i < rc; i++){
 			if (respbuff[i] == '\n'){
-				if (++nls){
+				if (++nls == 2){
 					goto send_ok;
 				}
 			}
@@ -415,7 +417,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				nls = 0;
 			}
 		}
-		h->state = hck_details::reading2;
+		h->position = nls;
 	}
 	else if (h->state == hck_details::keepalive){
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
