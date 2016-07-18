@@ -123,13 +123,12 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 		h->first = false;
 		h->tfo = true;
 
-
 		e.events = EPOLLOUT;
 		e.data.fd = h->remote_socket;
-		rc = epoll_ctl(hck->epfd, EPOLL_CTL_ADD, h->remote_socket, &e);
+		rc = epoll_ctl(hck->epfd, EPOLL_CTL_MOD, h->remote_socket, &e);
 		if (rc < 0)
 		{
-			zabbix_log(LOG_LEVEL_WARNING, "Unable to add socket to epoll: %s", strerror(errno));
+			zabbix_log(LOG_LEVEL_WARNING, "Unable to mod socket epoll for recovery: %s", strerror(errno));
 			return NULL;
 		}
 
@@ -496,6 +495,10 @@ send_ok:
 		else 
 		{
 			hck.keepalived[h->remote_connection] = h->remote_socket;
+
+			//Only get read events for keepalive
+			e.events = EPOLLIN;
+			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
 		}
 	}
 	return;
