@@ -68,12 +68,12 @@ struct hck_details {
 	unsigned int remote_connection_len : 8;
 	unsigned short position : 16;
 	enum {
-		connecting,
-		writing,
-		reading1,
-		reading2,
-		keepalive,
-		recovery
+		connecting = 1,
+		writing = 2,
+		reading1 = 3,
+		reading2 = 4,
+		keepalive 5,
+		recovery = 6
 	} state: 6;
 	bool first : 1;
 	bool tfo : 1;
