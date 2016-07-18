@@ -489,6 +489,7 @@ send_ok:
 
 		/* If a keepalive already exists, don't re-add */
 		if (hck.keepalived.find(h->remote_connection) != hck.keepalived.end()) {
+			assert(hck.keepalived[h->remote_connection] != h->remote_socket);
 			zabbix_log(LOG_LEVEL_WARNING, "Extra connection was opened, no longer needed - a keepalived connection exists.");
 			http_cleanup(hck, h);
 		}
@@ -760,7 +761,7 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	do {
 		rc = recv(fd, ptr, required, MSG_WAITALL);
 		if (rc == 0){
-			perror("socket shutdown, no more data");
+			perror("socket shutdown, no more data")close
 			return 4;
 		}
 		if (rc == -1){
@@ -889,7 +890,7 @@ extern "C" {
 
 		if (hck_fd == -1)
 		{
-			hck_fd = connect_to_hck();
+			hck_fd	hck_fd = connect_to_hck();
 		}
 		else if (send(hck_fd, &buffer, 0, 0) == -1)
 		{
