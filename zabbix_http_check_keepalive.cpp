@@ -60,7 +60,7 @@ struct cmp_map {
 // a check
 struct hck_details {
 	time_t expires;
-	int client_sock;
+	int client_socket;
 	int remote_socket;
 	struct sockaddr remote_connection;
 	unsigned short position : 16;
@@ -107,7 +107,7 @@ static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, 
 			h->state = hck_details::recovery;
 			h->position = 0;
 			h->expires = now + TIMEOUT_RECOVER;
-			h->client_sock = source;
+			h->client_socket = source;
 			h->first = false;
 			return h;
 		}
@@ -127,7 +127,7 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 	if (socket_desc == -1)
 	{
 		perror("error creating remote socket");
-		close(h->client_sock);
+		close(h->client_socket);
 		delete h;
 		return NULL;
 	}
@@ -143,7 +143,7 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS) {
 			perror("error connecting");
 			close(socket_desc);
-			close(h->client_sock);
+			close(h->client_socket);
 			delete h;
 			return NULL;
 		}
@@ -183,13 +183,13 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 	{
 		perror("epoll add error");
 		close(socket_desc);
-		close(h->client_sock);
+		close(h->client_socket);
 		delete h;
 		return NULL;
 	}
 
 	h->expires = now + TIMEOUT_NEW;
-	h->client_sock = source;
+	h->client_socket = source;
 	h->remote_connection = sockaddr;
 	h->remote_socket = socket_desc;
 	h->first = true;
@@ -208,6 +208,8 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	}
 
 	if (h != NULL) {
+		assert(hck->sockets.find(h->remote_socket) == hck->sockets.end());
+		assert(h->client_socket == source);
 		hck->sockets[h->remote_socket] = h;
 	}
 }
@@ -223,7 +225,7 @@ static void http_cleanup(hck_handle& hck, struct hck_details* h){
 	}
 
 	//Close sockets
-	close(h->client_sock)
+	close(h->client_socket)
 	close(h->remote_socket);
 
 	//Remove from map
@@ -271,7 +273,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			fprintf(stderr, "failed to send data (%d)\n", errno);
+			fprintf(stdout, "failed to send data (%d)\n", errno);
 			if (!h->first){
 				goto send_retry;
 			}
@@ -297,7 +299,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			fprintf(stderr, "failed to recv data (%d)\n", errno);
+			fprintf(stdout, "failed to recv data (%d)\n", errno);
 			if (!h->first && h->position == 0){
 				goto send_retry;
 			}
@@ -310,7 +312,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				goto send_ok;
 			}
 			else{
-				fprintf(stderr, "invalid response (char: %d)\n", respbuff[i] - '0');
+				fprintf(stdout, "invalid response (char: %d)\n", respbuff[i] - '0');
 				goto send_failure;
 			}
 		}
@@ -354,7 +356,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			return;
 		}
 		else{
-			fprintf(stderr, "connection interrupted\n");
+			fprintf(stdout, "connection interrupted\n");
 			goto send_failure;
 		}
 	}
@@ -362,7 +364,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	return;
 
 send_ok:
-	if (!send_result(&hck, h->client_sock, 1)){
+	if (!send_result(&hck, h->client_socket, 1)){
 		perror("failed to send result");
 		http_cleanup(hck, h);
 		return;
@@ -384,12 +386,12 @@ send_ok:
 	return;
 send_failure:
 	if (h->state != hck_details::keepalive){
-		send_result(&hck, h->client_sock, 0);
+		send_result(&hck, h->client_socket, 0);
 	}
 	http_cleanup(hck, h);
 	return;
 send_retry:
-	send_result(&hck, h->client_sock, 3);
+	send_result(&hck, h->client_socket, 3);
 	http_cleanup(hck, h);
 	return;
 }
@@ -428,7 +430,7 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		int idx = *it;
 		h = hck.sockets[*it];
 		if (h->state != hck_details::keepalive){
-			send_result(&hck, h->client_sock, false);
+			send_result(&hck, h->client_socket, false);
 		}
 		hck.sockets.erase(idx);
 		close(h->remote_socket);
@@ -520,8 +522,8 @@ void main_thread(){
 					bool found = false;
 					for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
 						struct hck_details* h = it->second;
-						if (h->client_sock == e.data.fd){
-							h->client_sock = -1;
+						if (h->client_socket == e.data.fd){
+							h->client_socket = -1;
 							found = true;
 						}
 					}
@@ -545,7 +547,7 @@ void main_thread(){
 cleanup:
 	close(fd);
 	for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
-		close(it->second->client_sock);
+		close(it->second->client_socket);
 		delete it->second;
 	}
 }
