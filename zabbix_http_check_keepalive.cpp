@@ -232,13 +232,19 @@ bool check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 
 	if (h == NULL) {
 		h = create_new_hck(hck, addr.ai_addrlen, sockaddr, now, source, tfo);
-	}
 
-	if (h != NULL) {
-		//Assert that socket entries are cleaned up when sockets are closed
-		assert(hck->sockets.find(h->remote_socket) == hck->sockets.end());
+		if (h != NULL) {
+			//Assert that socket entries are cleaned up when sockets are closed
+			assert(hck->sockets.find(h->remote_socket) == hck->sockets.end());
+			assert(h->client_socket == source);
+			hck->sockets[h->remote_socket] = h;
+			return true;
+		}
+	}
+	else
+	{
+		assert(hck->sockets[h->remote_socket] == h);
 		assert(h->client_socket == source);
-		hck->sockets[h->remote_socket] = h;
 		return true;
 	}
 
