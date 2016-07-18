@@ -525,7 +525,7 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	int required = sizeof(buf);
 	void* ptr = &buf;
 	do {
-		rc = recv(socket, &buf, , 0);
+		rc = recv(socket, &buf, required, 0);
 		if (rc <= 0){
 			close(socket);
 			return;
@@ -534,14 +534,14 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 		required -= rc;
 	} while (required);
 
-	int sa_zero = sizeof(sa) - servinfo.ai_addrlen;
+	int sa_zero = sizeof(buf.sa) - buf.servinfo.ai_addrlen;
 	assert(sa_zero >= 0);
 	if (sa_zero != 0){
 		//clear end of struct for when doing memcmp lookup
-		memset(&sa + sa_zero, 0, sa_zero);
+		memset(&buf.sa + sa_zero, 0, sa_zero);
 	}
 
-	if (!check_add(&hck, servinfo, sa, now, socket)){
+	if (!check_add(&hck, buf.servinfo, buf.sa, now, socket)){
 		//close on error
 		close(socket);
 	}
