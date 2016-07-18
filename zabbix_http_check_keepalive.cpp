@@ -336,7 +336,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		}
 		else{
 			recv(e.data.fd, 0, 0, 0);
-			zabbix_log(LOG_LEVEL_WARNING, "Sending failure due to error: %d", errno);
+			zabbix_log(LOG_LEVEL_WARNING, "Sending failure due to error: %s", strerror(errno));
 			goto send_failure;
 		}
 		return;
@@ -348,7 +348,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			zabbix_log(LOG_LEVEL_WARNING, "HCK: failed to send data (%d)\n", errno);
+			zabbix_log(LOG_LEVEL_WARNING, "HCK: failed to send data (%s)\n", strerror(errno));
 			if (!h->first){
 				goto send_retry;
 			}
@@ -375,7 +375,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			zabbix_log(LOG_LEVEL_WARNING, "HCK: failed to recv data (%d)\n", errno);
+			zabbix_log(LOG_LEVEL_WARNING, "HCK: failed to recv data (%s)\n", strerror(errno));
 			if (!h->first && h->position == 0){
 				goto send_retry;
 			}
