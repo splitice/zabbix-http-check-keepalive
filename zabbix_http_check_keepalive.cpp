@@ -165,7 +165,7 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 			goto error;
 		}
 
-
+		h = new struct hck_details;
 #ifdef MSG_FASTOPEN
 		e.events = EPOLLOUT;
 		h->state = hck_details::writing;
