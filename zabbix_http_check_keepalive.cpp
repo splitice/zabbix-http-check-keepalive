@@ -170,7 +170,7 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 	socket_desc = create_new_socket(sockaddr_len, sockaddr, fastopen);
 	if (socket_desc == -1)
 	{
-		perror("error connecting");
+		zabbix_log(LOG_LEVEL_WARNING, "Unable to create new socket: %s", strerror(errno));
 		goto error;
 	}
 
@@ -209,7 +209,7 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 	rc = epoll_ctl(hck->epfd, EPOLL_CTL_ADD, socket_desc, &e);
 	if (rc < 0)
 	{
-		perror("epoll add error");
+		zabbix_log(LOG_LEVEL_WARNING, "Unable to add socket to epoll: %s", strerror(errno));
 		goto error;
 	}
 
@@ -298,7 +298,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
 			if (rc < 0)
 			{
-				perror("epoll mod error");
+				zabbix_log(LOG_LEVEL_WARNING, "Unable to mod epoll: %s", strerror(errno));
 			}
 			h->state = hck_details::writing;
 		}
@@ -359,7 +359,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
 			if (rc < 0)
 			{
-				perror("epoll mod error");
+				zabbix_log(LOG_LEVEL_WARNING, "epoll mod error: %s", strerror(errno));
 			}
 		}
 	}
@@ -471,7 +471,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 send_ok:
 	if (!send_result(&hck, h->client_socket, 1)){
-		perror("failed to send result");
+		zabbix_log(LOG_LEVEL_WARNING, "Failed to send ok: %s", strerror(errno));
 		http_cleanup(hck, h);
 		return;
 	}
@@ -634,7 +634,7 @@ void main_thread(){
 					/* Accept & Add to EPOLL */
 					e.data.fd = accept(e.data.fd, 0, 0);
 					if (e.data.fd == -1){
-						perror("Unable to accept socket for internal communication");
+						zabbix_log(LOG_LEVEL_WARNING, "Unable to accept internal communication socket: %s", strerror(errno));
 						continue;
 					}
 					epoll_ctl(hck.epfd, EPOLL_CTL_ADD, e.data.fd, &e);
