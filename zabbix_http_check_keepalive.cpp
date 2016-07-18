@@ -179,7 +179,7 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 		e.events = EPOLLIN | EPOLLOUT;
 		h->state = hck_details::connecting;
 #endif
-	}else{	
+	}else{
 #ifdef MSG_FASTOPEN
 		if (rc < http_request_size) 
 		{
@@ -332,7 +332,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			fprintf(stdout, "failed to send data (%d)\n", errno);
+			fprintf(stdout, "HCK: failed to send data (%d)\n", errno);
 			if (!h->first){
 				goto send_retry;
 			}
@@ -358,7 +358,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			fprintf(stdout, "failed to recv data (%d)\n", errno);
+			fprintf(stdout, "HCK: failed to recv data (%d)\n", errno);
 			if (!h->first && h->position == 0){
 				goto send_retry;
 			}
@@ -371,7 +371,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				goto send_ok;
 			}
 			else{
-				fprintf(stdout, "invalid response (char: %d)\n", respbuff[i] - '0');
+				fprintf(stdout, "HCK: invalid response (char: %d)\n", respbuff[i] - '0');
 				goto send_failure;
 			}
 		}
@@ -415,7 +415,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			return;
 		}
 		else{
-			fprintf(stdout, "connection interrupted\n");
+			fprintf(stdout, "HCK: connection interrupted\n");
 			goto send_failure;
 		}
 	}
@@ -606,7 +606,7 @@ void main_thread(){
 
 					/* is it not a client socket? */
 					if (!found){
-						fprintf(stderr, "closing socket %d of unknown type\n", e.data.fd);
+						fprintf(stdout, "HCK: closing socket %d of unknown type\n", e.data.fd);
 					}
 
 					close(e.data.fd);
@@ -683,15 +683,18 @@ int connect_to_hck(){
 	struct sockaddr_un addr;
 	int fd;
 
+	//create new unix socket
 	if ((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 		perror("socket error");
 		return -1;
 	}
 
+	//setup unix socket address
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
 	zbx_strlcpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
 
+	//connect to unix socket
 	if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
 		perror("connect error");
 		close(fd);
@@ -784,7 +787,7 @@ extern "C" {
 		{
 			hck_fd = connect_to_hck();
 		}
-		else if (recv(hck_fd, &buffer, 0, 0) == -1)
+		else if (send(hck_fd, &buffer, 0, 0) == -1)
 		{
 			close(hck_fd);
 			hck_fd = connect_to_hck();
