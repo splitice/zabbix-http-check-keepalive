@@ -147,7 +147,11 @@ static int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr
 	if (rc != -1){
 		return socket_desc;
 	}
-	else{
+	else
+	{
+		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINPROGRESS) {
+			return socket_desc;
+		}
 		return rc;
 	}
 }
@@ -160,12 +164,13 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 	socket_desc = create_new_socket(sockaddr_len, sockaddr, fastopen);
 	if (socket_desc == -1)
 	{
-		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS) {
-			perror("error connecting");
-			goto error;
-		}
+		perror("error connecting");
+		goto error;
+	}
 
-		h = new struct hck_details;
+	h = new struct hck_details;
+	if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINPROGRESS) 
+	{
 #ifdef MSG_FASTOPEN
 		e.events = EPOLLOUT;
 		h->state = hck_details::writing;
@@ -174,17 +179,16 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 		e.events = EPOLLIN | EPOLLOUT;
 		h->state = hck_details::connecting;
 #endif
-	}
-	else
-	{
-		h = new struct hck_details;
+	}else{	
 #ifdef MSG_FASTOPEN
-		if (rc < http_request_size) {
+		if (rc < http_request_size) 
+		{
 			e.events = EPOLLOUT;
 			h->state = hck_details::writing;
 			h->position = rc;
 		}
-		else {
+		else 
+		{
 			e.events = EPOLLIN;
 			h->state = hck_details::reading;
 			h->position = 0;
