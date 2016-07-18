@@ -527,8 +527,8 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	int required = sizeof(buf);
 	void* ptr = &buf;
 	do {
-		rc = recv(socket, ptr, required, 0);
-		if (rc == -1){
+		rc = recv(socket, ptr, required, MSG_WAITALL);
+		if (rc == -1 || rc == 0){
 			close(socket);
 			return;
 		}
@@ -758,7 +758,11 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	int required = sizeof(result);
 	void* ptr = &result;
 	do {
-		rc = recv(fd, ptr, required, 0);
+		rc = recv(fd, ptr, required, MSG_WAITALL);
+		if (rc == 0){
+			perror("socket shutdown, no more data");
+			return 4;
+		}
 		if (rc == -1){
 			perror("io error during recv");
 			return 4;
