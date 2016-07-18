@@ -63,6 +63,7 @@ struct hck_details {
 	int client_socket;
 	int remote_socket;
 	struct sockaddr remote_connection;
+	unsigned int remote_connection_len : 8;
 	unsigned short position : 16;
 	enum {
 		connecting,
@@ -70,8 +71,9 @@ struct hck_details {
 		reading,
 		keepalive,
 		recovery
-	} state: 15;
+	} state: 6;
 	bool first : 1;
+	bool tfo : 1;
 };
 
 // the hck system (could be exported outside of zabbix in future)
@@ -94,7 +96,7 @@ bool send_result(hck_handle* hck, int sock, unsigned short result){
 	return rc >= 0;
 }
 
-static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, time_t now, int source) {
+static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,  struct sockaddr sockaddr, time_t now, int source) {
 	map<struct sockaddr, int>::iterator it;
 
 	it = hck->keepalived.find(sockaddr);
@@ -108,7 +110,9 @@ static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, 
 			h->position = 0;
 			h->expires = now + TIMEOUT_RECOVER;
 			h->client_socket = source;
+			assert(h->remote_connection_len == sockaddr_len);
 			h->first = false;
+			h->tfo = true;
 			return h;
 		}
 	}
@@ -116,7 +120,7 @@ static hck_details* keepalive_lookup(hck_handle* hck, struct sockaddr sockaddr, 
 	return NULL;
 }
 
-static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source) {
+static struct hck_details* create_new_socket(hck_handle* hck, unsigned int sockaddr_len, struct sockaddr sockaddr, time_t now, int source, bool fastopen = true) {
 	struct hck_details* h = new struct hck_details;
 	int socket_desc;
 	struct epoll_event e;
@@ -134,9 +138,16 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 
 	//Connect to remote server
 #ifdef MSG_FASTOPEN
-	rc = sendto(socket_desc, http_request, http_request_size, MSG_FASTOPEN, &sockaddr, addr.ai_addrlen);
+	if (fastopen)
+	{
+		rc = sendto(socket_desc, http_request, http_request_size, MSG_FASTOPEN, &sockaddr, sockaddr_len);
+	}
+	else
+	{
+		rc = connect(socket_desc, &sockaddr, sockaddr_len);
+	}
 #else
-	rc = connect(socket_desc, &sockaddr, addr.ai_addrlen);
+	rc = connect(socket_desc, &sockaddr, sockaddr_len);
 #endif
 	if (rc < 0)
 	{
@@ -191,20 +202,22 @@ static struct hck_details* create_new_socket(hck_handle* hck, struct addrinfo ad
 	h->expires = now + TIMEOUT_NEW;
 	h->client_socket = source;
 	h->remote_connection = sockaddr;
+	h->remote_connection_len = sockaddr_len;
 	h->remote_socket = socket_desc;
 	h->first = true;
+	h->tfo = true;
 
 	return h;
 }
 
 // add a check in the worker
-void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source){
+void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source, bool tfo = true){
 	struct hck_details* h;
 
-	h = keepalive_lookup(hck, sockaddr, now, source);
+	h = keepalive_lookup(hck, addr.ai_addrlen, sockaddr, now, source);
 
 	if (h == NULL) {
-		h = create_new_socket(hck, addr, sockaddr, now, source);
+		h = create_new_socket(hck, addr.ai_addrlen, sockaddr, now, source, tfo);
 	}
 
 	if (h != NULL) {
@@ -243,6 +256,35 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 	h = hck.sockets[e.data.fd];
 
+	if (h->state == hck_details::connecting){
+		if (e.events & EPOLLIN || e.events & EPOLLOUT){
+			/* Connection success */
+			e.events = EPOLLOUT;
+			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
+			if (rc < 0)
+			{
+				perror("epoll mod error");
+			}
+			h->state = hck_details::writing;
+		}
+		else{
+			/* Failed to connect */
+			if (h->tfo){
+				/* Attempt to re-connect without TFO */
+				h->tfo = false;
+
+				hck.sockets.erase(e.data.fd);
+
+				close(h->remote_socket);
+				h->remote_socket = create_new_socket(hck, h->remote_connection_len, h->remote_connection, now, h->client_socket, false);
+				hck.sockets[h->remote_socket] = h;
+
+				return;
+			}
+		}
+	}
+
+
 	/* Do not pass go, do not collect $200 */
 	/* An error has occured on the socket, time to cleanup */
 	if (e.events & EPOLLERR){
@@ -255,18 +297,6 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		return;
 	}
 
-	if (h->state == hck_details::connecting){
-		/* Connection success */
-		if (e.events & EPOLLIN || e.events & EPOLLOUT){
-			e.events = EPOLLOUT;
-			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
-			if (rc < 0)
-			{
-				perror("epoll mod error");
-			}
-			h->state = hck_details::writing;
-		}
-	}
 	if (h->state == hck_details::writing){
 		rc = send(e.data.fd, http_request + h->position, http_request_size - h->position, 0);
 		if (rc == -1){
