@@ -522,6 +522,8 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	} buf;
 	int rc;
 
+	assert(sizeof(buf.sa) + sizeof(buf.servinfo) == sizeof(buf));
+
 	int required = sizeof(buf);
 	void* ptr = &buf;
 	do {
@@ -604,6 +606,25 @@ int create_listener(){
 	return fd;
 }
 
+bool set_blocking_mode(const int &socket, bool is_blocking)
+{
+	bool ret = true;
+
+#ifdef WIN32
+	/// @note windows sockets are created in blocking mode by default
+	// currently on windows, there is no easy way to obtain the socket's current blocking mode since WSAIsBlocking was deprecated
+	u_long non_blocking = is_blocking ? 0 : 1;
+	ret = NO_ERROR == ioctlsocket(socket, FIONBIO, &non_blocking);
+#else
+	const int flags = fcntl(socket, F_GETFL, 0);
+	if ((flags & O_NONBLOCK) && !is_blocking) { info("set_blocking_mode(): socket was already in non-blocking mode"); return ret; }
+	if (!(flags & O_NONBLOCK) && is_blocking) { info("set_blocking_mode(): socket was already in blocking mode"); return ret; }
+	ret = 0 == fcntl(socket, F_SETFL, is_blocking ? flags ^ O_NONBLOCK : flags | O_NONBLOCK));
+#endif
+
+	return ret;
+}
+
 /*
 Main loop for processing check requests
 */
@@ -656,6 +677,7 @@ void main_thread(){
 						zabbix_log(LOG_LEVEL_WARNING, "Unable to accept internal communication socket: %s", strerror(errno));
 						continue;
 					}
+					set_blocking_mode(e.data.fd);
 					epoll_ctl(hck.epfd, EPOLL_CTL_ADD, e.data.fd, &e);
 				}
 				else{
