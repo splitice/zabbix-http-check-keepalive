@@ -231,14 +231,13 @@ static void http_cleanup(hck_handle& hck, struct hck_details* h){
 	if (h->state == hck_details::keepalive){
 		//Assert that the DB is in the correct state
 		assert(hck.keepalived.find(h->remote_connection) != hck.keepalived.end());
-		assert(hck.keepalived.find(h->remote_connection)->second == h);
 
 		//Clear the keepalive
 		hck.keepalived.erase(h->remote_connection);
 	}
 
 	//Close sockets
-	close(h->client_socket)
+	close(h->client_socket);
 	close(h->remote_socket);
 
 	//Remove from map
@@ -276,7 +275,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				hck.sockets.erase(e.data.fd);
 
 				close(h->remote_socket);
-				h->remote_socket = create_new_socket(hck, h->remote_connection_len, h->remote_connection, now, h->client_socket, false);
+				h->remote_socket = create_new_socket(&hck, h->remote_connection_len, h->remote_connection, now, h->client_socket, false);
 				hck.sockets[h->remote_socket] = h;
 
 				return;
@@ -513,17 +512,21 @@ void main_thread(){
 	hck.epfd = epoll_create(1024);
 	localtime(&now);
 	
+	/* Create internal listener */
 	fd = create_listener();
 	if (fd == -1){
 		return;
 	}
 
+	/* Add the listener to EPOLL */
 	e.data.fd = fd;
 	e.events = EPOLLIN;
 	epoll_ctl(hck.epfd, EPOLL_CTL_ADD, fd, &e);
 
 	while (running){
+		/* Update timestamp once per loop */
 		time(&now);
+
 		n = epoll_wait(hck.epfd, events, MAXEVENTS, 1000);
 		while (n > 0){
 			n--;
@@ -533,9 +536,15 @@ void main_thread(){
 			if (hck.sockets.find(e.data.fd) != hck.sockets.end()){ /* handle events for the checks */
 				handle_http(hck, e, now);
 			}
-			else if (e.data.fd == fd){ /* Handle new connections to the main thread */
+			else if (e.data.fd == fd){ 
+				/* Handle new connections to the main thread */
 				if (e.events & EPOLLIN){
+					/* Accept & Add to EPOLL */
 					e.data.fd = accept(e.data.fd, 0, 0);
+					if (e.data.fd == -1){
+						perror("Unable to accept socket for internal communication");
+						continue;
+					}
 					epoll_ctl(hck.epfd, EPOLL_CTL_ADD, e.data.fd, &e);
 				}
 				else{
@@ -553,6 +562,7 @@ void main_thread(){
 					for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
 						struct hck_details* h = it->second;
 						if (h->client_socket == e.data.fd){
+							assert(!found);//todo: add if debug break
 							h->client_socket = -1;
 							found = true;
 						}
@@ -560,7 +570,7 @@ void main_thread(){
 
 					/* is it not a client socket? */
 					if (!found){
-						fprintf(strderr, "closing socket %d of unknown type\n", e.data.fd);
+						fprintf(stderr, "closing socket %d of unknown type\n", e.data.fd);
 					}
 
 					close(e.data.fd);
