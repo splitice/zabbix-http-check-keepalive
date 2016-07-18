@@ -212,6 +212,13 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 	h->tfo = true;
 
 	return h;
+error:
+	close(socket_desc);
+	close(h->client_socket);
+	if (h != NULL){
+		delete h;
+	}
+	return NULL;
 }
 
 // add a check in the worker
