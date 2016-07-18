@@ -540,6 +540,8 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		h = it->second;
 		if (h->expires < now){
 			to_delete.push_back(it->first);
+
+			zabbix_log(LOG_LEVEL_WARNING, "Expiring socket %d in state %d", h->remote_scoket, h->state));
 		}
 	}
 	for (std::vector<int>::iterator it = to_delete.begin(); it != to_delete.end(); it++){
