@@ -102,20 +102,22 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 	it = hck->keepalived.find(sockaddr);
 	if (it != hck->keepalived.end()) {
 		struct hck_details* h = hck->sockets[it->second];
-		assert(h->remote_connection == sockaddr);
-		hck->keepalived.erase(it->first);
 
-		//Err, it should be....
-		if (h->state == hck_details::keepalive) {
-			h->state = hck_details::recovery;
-			h->position = 0;
-			h->expires = now + TIMEOUT_RECOVER;
-			h->client_socket = source;
-			assert(h->remote_connection_len == sockaddr_len);
-			h->first = false;
-			h->tfo = true;
-			return h;
-		}
+		assert(h->remote_connection_len == sockaddr_len);
+		assert(memcmp(&h->remote_connection, sockaddr, sockaddr_len));
+		assert(h->state == hck_details::keepalive);
+
+		//Remove from keepalive
+		int erased = hck->keepalived.erase(it->first);
+		assert(erased == 1);
+
+		h->state = hck_details::recovery;
+		h->position = 0;
+		h->expires = now + TIMEOUT_RECOVER;
+		h->client_socket = source;
+		h->first = false;
+		h->tfo = true;
+		return h;
 	}
 
 	return NULL;
