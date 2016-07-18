@@ -23,10 +23,10 @@
 
 extern "C" {
 	#include "common.h"
+	#include "log.h"
 	int    zbx_module_hck_check(AGENT_REQUEST *request, AGENT_RESULT *result);
 }
 
-#include "log.h"
 
 static ZBX_METRIC keys[] =
 /* KEY               FLAG           FUNCTION                TEST PARAMETERS */
