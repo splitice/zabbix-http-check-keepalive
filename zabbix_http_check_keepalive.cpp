@@ -525,7 +525,7 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	int required = sizeof(buf);
 	void* ptr = &buf;
 	do {
-		rc = recv(socket, &buf, required, 0);
+		rc = recv(socket, ptr, required, 0);
 		if (rc <= 0){
 			close(socket);
 			return;
