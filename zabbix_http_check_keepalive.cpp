@@ -478,6 +478,13 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 		return;
 	}
 
+	int sa_zero = sizeof(sa) - servinfo.ai_addrlen;
+	assert(sa_zero >= 0);
+	if (sa_zero != 0){
+		//clear end
+		memset(&sa + sa_zero, 0, sa_zero);
+	}
+
 	if (!check_add(&hck, servinfo, sa, now, socket)){
 		//close on error
 		close(socket);
