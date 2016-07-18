@@ -152,20 +152,17 @@ static int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr
 	}
 }
 
-static struct hck_details* create_new_socket(hck_handle* hck, unsigned int sockaddr_len, struct sockaddr sockaddr, time_t now, int source, bool fastopen = true) {
+static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr_len, struct sockaddr sockaddr, time_t now, int source, bool fastopen = true) {
 	int rc, socket_desc;
 	struct epoll_event e;
-	struct hck_details* h = new struct hck_details;
+	struct hck_details* h = NULL;
 	
 	socket_desc = create_new_socket(sockaddr_len, sockaddr, fastopen);
 	if (socket_desc == -1)
 	{
 		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS) {
 			perror("error connecting");
-			close(socket_desc);
-			close(h->client_socket);
-			delete h;
-			return NULL;
+			goto error;
 		}
 
 
@@ -180,6 +177,7 @@ static struct hck_details* create_new_socket(hck_handle* hck, unsigned int socka
 	}
 	else
 	{
+		h = new struct hck_details;
 #ifdef MSG_FASTOPEN
 		if (rc < http_request_size) {
 			e.events = EPOLLOUT;
@@ -202,10 +200,7 @@ static struct hck_details* create_new_socket(hck_handle* hck, unsigned int socka
 	if (rc < 0)
 	{
 		perror("epoll add error");
-		close(socket_desc);
-		close(h->client_socket);
-		delete h;
-		return NULL;
+		goto error;
 	}
 
 	h->expires = now + TIMEOUT_NEW;
@@ -226,10 +221,11 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 	h = keepalive_lookup(hck, addr.ai_addrlen, sockaddr, now, source);
 
 	if (h == NULL) {
-		h = create_new_socket(hck, addr.ai_addrlen, sockaddr, now, source, tfo);
+		h = create_new_hck(hck, addr.ai_addrlen, sockaddr, now, source, tfo);
 	}
 
 	if (h != NULL) {
+		//Assert that socket entries are cleaned up when sockets are closed
 		assert(hck->sockets.find(h->remote_socket) == hck->sockets.end());
 		assert(h->client_socket == source);
 		hck->sockets[h->remote_socket] = h;
@@ -237,20 +233,24 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 }
 
 static void http_cleanup(hck_handle& hck, struct hck_details* h){
+	int erased;
+
 	if (h->state == hck_details::keepalive){
 		//Assert that the DB is in the correct state
 		assert(hck.keepalived.find(h->remote_connection) != hck.keepalived.end());
 
 		//Clear the keepalive
-		hck.keepalived.erase(h->remote_connection);
+		erased = hck.keepalived.erase(h->remote_connection);
+		assert(erased == 1);
 	}
+
+	//Remove from map
+	erased = hck.sockets.erase(h->remote_socket);
+	assert(erased == 1);
 
 	//Close sockets
 	close(h->client_socket);
 	close(h->remote_socket);
-
-	//Remove from map
-	hck.sockets.erase(h->remote_socket);
 
 	//Finally free memory
 	delete h;
@@ -281,7 +281,8 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				/* Attempt to re-connect without TFO */
 				h->tfo = false;
 
-				hck.sockets.erase(e.data.fd);
+				int erased = hck.sockets.erase(e.data.fd);
+				assert(erased == 1);
 
 				close(h->remote_socket);
 				h->remote_socket = create_new_socket(h->remote_connection_len, h->remote_connection, false);
@@ -470,7 +471,10 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		if (h->state != hck_details::keepalive){
 			send_result(&hck, h->client_socket, false);
 		}
-		hck.sockets.erase(idx);
+		
+		int erased = hck.sockets.erase(idx);
+		assert(erased == 1);
+
 		close(h->remote_socket);
 		delete h;
 	}
