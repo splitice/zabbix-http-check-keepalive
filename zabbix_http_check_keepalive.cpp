@@ -102,6 +102,7 @@ bool send_result(hck_handle* hck, int sock, unsigned short result){
 static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,  struct sockaddr sockaddr, time_t now, int source) {
 	map<struct sockaddr, int>::iterator it;
 	struct epoll_event e;
+	int rc;
 
 	it = hck->keepalived.find(sockaddr);
 	if (it != hck->keepalived.end()) {
