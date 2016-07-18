@@ -101,6 +101,7 @@ bool send_result(hck_handle* hck, int sock, unsigned short result){
 
 static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,  struct sockaddr sockaddr, time_t now, int source) {
 	map<struct sockaddr, int>::iterator it;
+	struct epoll_event e;
 
 	it = hck->keepalived.find(sockaddr);
 	if (it != hck->keepalived.end()) {
@@ -120,6 +121,17 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 		h->client_socket = source;
 		h->first = false;
 		h->tfo = true;
+
+
+		e.events = EPOLLOUT;
+		e.data.fd = h->remote_socket;
+		rc = epoll_ctl(hck->epfd, EPOLL_CTL_ADD, h->remote_socket, &e);
+		if (rc < 0)
+		{
+			zabbix_log(LOG_LEVEL_WARNING, "Unable to add socket to epoll: %s", strerror(errno));
+			return NULL;
+		}
+
 		return h;
 	}
 
