@@ -392,8 +392,10 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 						nls = 0;
 					}
 				}
-				h->position = nls;
+
+				//Position signifies number of newlines in reading2
 				h->state = hck_details::reading2;
+				h->position = nls;
 			}
 			else{
 				fprintf(stdout, "HCK: invalid response (char: %d)\n", respbuff[i] - '0');
@@ -404,6 +406,8 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			h->position += rc;
 		}
 	}
+
+
 	if (h->state == hck_details::reading2){
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 		uint8_t nls = h->position;
@@ -539,6 +543,7 @@ void handle_cleanup(hck_handle& hck, time_t now){
 	for (std::vector<int>::iterator it = to_delete.begin(); it != to_delete.end(); it++){
 		int idx = *it;
 		h = hck.sockets[*it];
+
 		if (h->state != hck_details::keepalive){
 			send_result(&hck, h->client_socket, false);
 		}
@@ -546,6 +551,7 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		int erased = hck.sockets.erase(idx);
 		assert(erased == 1);
 
+		close(h->client_socket);
 		close(h->remote_socket);
 		delete h;
 	}
