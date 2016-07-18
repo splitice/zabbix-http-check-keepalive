@@ -898,7 +898,7 @@ extern "C" {
 
 		if (hck_fd == -1)
 		{
-			hck_fd	hck_fd = connect_to_hck();
+			hck_fd = connect_to_hck();
 		}
 		else if (send(hck_fd, &buffer, 0, 0) == -1)
 		{
