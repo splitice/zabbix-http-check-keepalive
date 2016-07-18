@@ -273,11 +273,12 @@ static void http_cleanup(hck_handle& hck, struct hck_details* h){
 	if (h->remote_socket != -1){
 		erased = hck.sockets.erase(h->remote_socket);
 		assert(erased == 1);
+		shutdown(h->remote_socket, SHUT_RDWR);
 		close(h->remote_socket);
 	}
 
 	//Close client socket
-	close(h->client_socket);
+	shutdown(h->client_socket, SHUT_RDWR);
 
 	//Finally free memory
 	delete h;
