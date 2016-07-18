@@ -68,7 +68,8 @@ struct hck_details {
 	enum {
 		connecting,
 		writing,
-		reading,
+		reading1,
+		reading2,
 		keepalive,
 		recovery
 	} state: 6;
@@ -193,7 +194,7 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 		else 
 		{
 			e.events = EPOLLIN;
-			h->state = hck_details::reading;
+			h->state = hck_details::reading1;
 			h->position = 0;
 		}
 #else
@@ -349,7 +350,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		}
 		h->position += rc;
 		if (h->position == http_request_size){
-			h->state = hck_details::reading;
+			h->state = hck_details::reading1;
 			h->position = 0;
 
 			e.events = EPOLLIN;
@@ -360,9 +361,10 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			}
 		}
 	}
-	else if (h->state == hck_details::reading){
+	else if (h->state == hck_details::reading1){
 		int i = http_resp_startlen - h->position;
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
+
 		if (rc  == -1){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
@@ -377,15 +379,42 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		if (rc > i){
 			i -= 1;
 			if (respbuff[i] > '0' && respbuff[i] < '5'){
-				goto send_ok;
+				uint8_t nls = 0;
+				for (; i < rc; i++){
+					if (respbuff[i] == '\n'){
+						if (++nls){
+							goto send_ok;
+						}
+					}
+					else if (respbuf[i] != '\r'){
+						nls = 0;
+					}
+				}
+				h->position = nls;
+				h->state = hck_details::reading2;
 			}
 			else{
 				fprintf(stdout, "HCK: invalid response (char: %d)\n", respbuff[i] - '0');
 				goto send_failure;
 			}
 		}
-
-		h->position += rc;
+		else {
+			h->position += rc;
+		}
+	}
+	if (h->state == hck_details::reading2){
+		uint8_t nls = h->position;
+		for (; i < rc; i++){
+			if (respbuff[i] == '\n'){
+				if (++nls){
+					goto send_ok;
+				}
+			}
+			else if (respbuf[i] != '\r'){
+				nls = 0;
+			}
+		}
+		h->state = hck_details::reading2;
 	}
 	else if (h->state == hck_details::keepalive){
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
