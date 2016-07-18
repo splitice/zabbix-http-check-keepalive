@@ -780,7 +780,7 @@ extern "C" {
 		{
 			hck_fd = connect_to_hck();
 		}
-		else if (recv(hck_fd, &buffer, 0) == -1)
+		else if (recv(hck_fd, &buffer, 0, 0) == -1)
 		{
 			close(hck_fd);
 			hck_fd = connect_to_hck();
