@@ -221,7 +221,7 @@ error:
 }
 
 // add a check in the worker
-void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source, bool tfo = true){
+bool check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source, bool tfo = true){
 	struct hck_details* h;
 
 	h = keepalive_lookup(hck, addr.ai_addrlen, sockaddr, now, source);
@@ -235,7 +235,10 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 		assert(hck->sockets.find(h->remote_socket) == hck->sockets.end());
 		assert(h->client_socket == source);
 		hck->sockets[h->remote_socket] = h;
+		return true;
 	}
+
+	return false;
 }
 
 static void http_cleanup(hck_handle& hck, struct hck_details* h){
@@ -465,8 +468,10 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 		return;
 	}
 
-	check_add(&hck, servinfo, sa, now, socket);
-	close(socket);
+	if (!check_add(&hck, servinfo, sa, now, socket)){
+		//close on error
+		close(socket);
+	}
 }
 
 void handle_cleanup(hck_handle& hck, time_t now){
@@ -769,8 +774,15 @@ extern "C" {
 	{
 		unsigned short res;
 		char *param1, *param2;
+		char buffer[1];
 
-		if (hck_fd == -1){
+		if (hck_fd == -1)
+		{
+			hck_fd = connect_to_hck();
+		}
+		else if (recv(hck_fd, &buffer, 0) == -1)
+		{
+			close(hck_fd);
 			hck_fd = connect_to_hck();
 		}
 
