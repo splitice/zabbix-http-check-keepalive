@@ -526,11 +526,11 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	void* ptr = &buf;
 	do {
 		rc = recv(socket, ptr, required, 0);
-		if (rc <= 0){
+		if (rc == -1){
 			close(socket);
 			return;
 		}
-		ptr += required;
+		ptr += rc;
 		required -= rc;
 	} while (required);
 
@@ -746,7 +746,7 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	void* ptr = &result;
 	do {
 		rc = recv(fd, ptr, required, 0);
-		if (rc < 0){
+		if (rc == -1){
 			perror("io error during recv");
 			return 4;
 		}
