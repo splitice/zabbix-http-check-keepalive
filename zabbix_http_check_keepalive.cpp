@@ -334,6 +334,8 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			http_cleanup(hck, h);
 		}
 		else{
+			recv(e.data.fd, 0, 0, 0);
+			zabbix_log(LOG_LEVEL_WARNING, "Sending failure due to error: %d", errno);
 			goto send_failure;
 		}
 		return;
@@ -461,6 +463,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 	if (e.events & EPOLLOUT == 0 && e.events & EPOLLIN == 0 && (e.events & EPOLLHUP || e.events & EPOLLRDHUP)){
 		if (h->state == hck_details::keepalive){
+			zabbix_log(LOG_LEVEL_WARNING, "Keepalive connection closed");
 			http_cleanup(hck, h);
 			return;
 		}
@@ -485,6 +488,7 @@ send_ok:
 
 		/* If a keepalive already exists, don't re-add */
 		if (hck.keepalived.find(h->remote_connection) != hck.keepalived.end()) {
+			zabbix_log(LOG_LEVEL_WARNING, "Extra connection was opened, no longer needed - a keepalived connection exists.");
 			http_cleanup(hck, h);
 		}
 		else 
