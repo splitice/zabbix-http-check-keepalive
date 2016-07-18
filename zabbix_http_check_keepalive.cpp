@@ -214,7 +214,6 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 	return h;
 error:
 	close(socket_desc);
-	close(h->client_socket);
 	if (h != NULL){
 		delete h;
 	}
@@ -460,6 +459,7 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	}
 
 	check_add(&hck, servinfo, sa, now, socket);
+	close(socket);
 }
 
 void handle_cleanup(hck_handle& hck, time_t now){
