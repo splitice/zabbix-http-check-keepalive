@@ -437,28 +437,16 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		}
 	}
 	else if (h->state == hck_details::recovery){
-		if (e.events & EPOLLHUP || e.events & EPOLLRDHUP){
+		if (e.events & EPOLLHUP || e.events & EPOLLRDHUP || e.events & EPOLLERR){
 			zabbix_log(LOG_LEVEL_WARNING, "Keepalive recovery connection closing, no longer open");
 			h->expires = 0;
 			http_cleanup(hck, h);
 			return;
 		}
 
-		// Try and make sure we read everything
-		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
-		if (rc == -1){
-			if (errno == EAGAIN || errno == EWOULDBLOCK){
-				h->state = hck_details::writing;
-				assert(h->position == 0);
-			}
-			else{
-				goto send_retry;
-			}
-		}
-		else if(rc == 0){
-			h->state = hck_details::writing;
-			assert(h->position == 0);
-		}
+		// Place back into wiritng
+		h->state = hck_details::writing;
+		assert(h->position == 0);
 	}
 
 	if (e.events & EPOLLOUT == 0 && e.events & EPOLLIN == 0 && (e.events & EPOLLHUP || e.events & EPOLLRDHUP)){
