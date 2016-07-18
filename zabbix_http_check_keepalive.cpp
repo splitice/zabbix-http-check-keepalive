@@ -516,20 +516,23 @@ send_retry:
 
 // handle internal communication
 void handle_internalsock(hck_handle& hck, int socket, time_t now){
-	struct addrinfo servinfo;
-	struct sockaddr sa;
+	struct {
+		struct addrinfo servinfo;
+		struct sockaddr sa;
+	} buf;
 	int rc;
 
-	rc = recv(socket, &sa, sizeof(sa), 0);
-	if (rc <= 0){
-		close(socket);
-		return;
-	}
-	rc = recv(socket, &servinfo, sizeof(addrinfo), 0);
-	if (rc <= 0){
-		close(socket);
-		return;
-	}
+	int required = sizeof(buf);
+	void* ptr = &buf;
+	do {
+		rc = recv(socket, &buf, , 0);
+		if (rc <= 0){
+			close(socket);
+			return;
+		}
+		ptr += required;
+		required -= rc;
+	} while (required);
 
 	int sa_zero = sizeof(sa) - servinfo.ai_addrlen;
 	assert(sa_zero >= 0);
@@ -739,11 +742,17 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	}
 	freeaddrinfo(servinfo); // free the linked-list
 
-	rc = recv(fd, &result, sizeof(result), 0);
-	if (rc < 0){
-		perror("io error during recv");
-		return 4;
-	}
+	int required = sizeof(result);
+	void* ptr = &result;
+	do {
+		rc = recv(fd, ptr, required, 0);
+		if (rc < 0){
+			perror("io error during recv");
+			return 4;
+		}
+		required -= rc;
+		ptr += rc;
+	} while (required);
 
 	if (result == 3){
 		if (!retry){
