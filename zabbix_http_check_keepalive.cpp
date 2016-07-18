@@ -517,8 +517,8 @@ send_retry:
 // handle internal communication
 void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	struct {
-		struct addrinfo servinfo;
 		struct sockaddr sa;
+		struct addrinfo servinfo;
 	} buf;
 	int rc;
 
