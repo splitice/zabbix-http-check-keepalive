@@ -102,6 +102,7 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 	it = hck->keepalived.find(sockaddr);
 	if (it != hck->keepalived.end()) {
 		struct hck_details* h = hck->sockets[it->second];
+		assert(h->remote_connection == sockaddr);
 		hck->keepalived.erase(it->first);
 
 		//Err, it should be....
@@ -481,7 +482,7 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	int sa_zero = sizeof(sa) - servinfo.ai_addrlen;
 	assert(sa_zero >= 0);
 	if (sa_zero != 0){
-		//clear end
+		//clear end of struct for when doing memcmp lookup
 		memset(&sa + sa_zero, 0, sa_zero);
 	}
 
