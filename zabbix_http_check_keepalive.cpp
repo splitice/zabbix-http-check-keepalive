@@ -250,13 +250,15 @@ static void http_cleanup(hck_handle& hck, struct hck_details* h){
 		assert(erased == 1);
 	}
 
-	//Remove from map
-	erased = hck.sockets.erase(h->remote_socket);
-	assert(erased == 1);
+	//Cleanup remote
+	if (h->remote_socket != -1){
+		erased = hck.sockets.erase(h->remote_socket);
+		assert(erased == 1);
+		close(h->remote_socket);
+	}
 
-	//Close sockets
+	//Close client socket
 	close(h->client_socket);
-	close(h->remote_socket);
 
 	//Finally free memory
 	delete h;
@@ -292,7 +294,12 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 				close(h->remote_socket);
 				h->remote_socket = create_new_socket(h->remote_connection_len, h->remote_connection, false);
-				hck.sockets[h->remote_socket] = h;
+				if (h->remote_socket == -1){
+					goto send_failure;
+				}
+				else{
+					hck.sockets[h->remote_socket] = h;
+				}
 
 				return;
 			}
