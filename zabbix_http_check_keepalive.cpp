@@ -19,6 +19,7 @@
 #include <functional>
 #include <cstring>
 #include "sysinc.h"
+#include "log.h"
 #include "module.h"
 
 extern "C" {
@@ -342,7 +343,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			fprintf(stdout, "HCK: failed to send data (%d)\n", errno);
+			zabbix_log(LOG_LEVEL_WARNING, "HCK: failed to send data (%d)\n", errno);
 			if (!h->first){
 				goto send_retry;
 			}
@@ -369,7 +370,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			fprintf(stdout, "HCK: failed to recv data (%d)\n", errno);
+			zabbix_log(LOG_LEVEL_WARNING, "HCK: failed to recv data (%d)\n", errno);
 			if (!h->first && h->position == 0){
 				goto send_retry;
 			}
@@ -398,7 +399,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				h->position = nls;
 			}
 			else{
-				fprintf(stdout, "HCK: invalid response (char: %d)\n", respbuff[i] - '0');
+				zabbix_log(LOG_LEVEL_WARNING, "HCK: invalid response (char: %d)\n", respbuff[i] - '0');
 				goto send_failure;
 			}
 		}
@@ -460,7 +461,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			return;
 		}
 		else{
-			fprintf(stdout, "HCK: connection interrupted\n");
+			zabbix_log(LOG_LEVEL_WARNING, "HCK: connection interrupted\n");
 			goto send_failure;
 		}
 	}
@@ -660,7 +661,7 @@ void main_thread(){
 
 					/* is it not a client socket? */
 					if (!found){
-						fprintf(stdout, "HCK: closing socket %d of unknown type\n", e.data.fd);
+						zabbix_log(LOG_LEVEL_WARNING, "HCK: closing socket %d of unknown type\n", e.data.fd);
 					}
 
 					close(e.data.fd);
