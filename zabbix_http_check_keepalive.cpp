@@ -611,7 +611,7 @@ bool set_blocking_mode(const int &socket, bool is_blocking)
 	bool ret = true;
 
 	const int flags = fcntl(socket, F_GETFL, 0);
-	ret = 0 == fcntl(socket, F_SETFL, is_blocking ? flags ^ O_NONBLOCK : flags | O_NONBLOCK));
+	ret = 0 == fcntl(socket, F_SETFL, is_blocking ? (flags ^ O_NONBLOCK) : (flags | O_NONBLOCK));	
 
 	return ret;
 }
@@ -668,7 +668,7 @@ void main_thread(){
 						zabbix_log(LOG_LEVEL_WARNING, "Unable to accept internal communication socket: %s", strerror(errno));
 						continue;
 					}
-					set_blocking_mode(e.data.fd);
+					set_blocking_mode(e.data.fd, true);
 					epoll_ctl(hck.epfd, EPOLL_CTL_ADD, e.data.fd, &e);
 				}
 				else{
