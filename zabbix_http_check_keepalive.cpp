@@ -72,7 +72,7 @@ struct hck_details {
 		writing = 2,
 		reading1 = 3,
 		reading2 = 4,
-		keepalive 5,
+		keepalive = 5,
 		recovery = 6
 	} state: 6;
 	bool first : 1;
