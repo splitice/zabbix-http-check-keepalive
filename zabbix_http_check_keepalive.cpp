@@ -128,7 +128,7 @@ static int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr
 	socket_desc = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if (socket_desc == -1)
 	{
-		return 0;
+		return -1;
 	}
 
 	//Connect to remote server
@@ -144,7 +144,7 @@ static int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr
 #else
 	rc = connect(socket_desc, &sockaddr, sockaddr_len);
 #endif
-	if (rc >= 0){
+	if (rc != -1){
 		return socket_desc;
 	}
 	else{
