@@ -289,8 +289,16 @@ static void http_cleanup(hck_handle& hck, struct hck_details* h){
 		close(h->remote_socket);
 	}
 
+
+	linger lin;
+	unsigned int y = sizeof(lin);
+	lin.l_onoff = 1;
+	lin.l_linger = 10;
+	setsockopt(h->client_socket, SOL_SOCKET, SO_LINGER, (void*)(&lin), y);
+
 	//Close client socket
 	shutdown(h->client_socket, SHUT_RDWR);
+	close(h->client_socket);
 
 	//Finally free memory
 	delete h;
@@ -761,7 +769,7 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	do {
 		rc = recv(fd, ptr, required, MSG_WAITALL);
 		if (rc == 0){
-			perror("socket shutdown, no more data")close
+			perror("socket shutdown, no more data");
 			return 4;
 		}
 		if (rc == -1){
