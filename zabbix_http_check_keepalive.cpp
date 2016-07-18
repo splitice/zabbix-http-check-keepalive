@@ -82,16 +82,6 @@ public:
 	map<struct sockaddr, int, struct cmp_map> keepalived;
 };
 
-void set_max_open(){
-	struct rlimit limit;
-
-	limit.rlim_cur = 655350;
-	limit.rlim_max = 655350;
-	if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {
-		printf("setrlimit() failed with errno=%d\n", errno);
-	}
-}
-
 //send result from worker -> process
 bool send_result(hck_handle* hck, int sock, unsigned short result){
 	//Communication socket failed!
@@ -224,14 +214,21 @@ void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, 
 
 static void http_cleanup(hck_handle& hck, struct hck_details* h){
 	if (h->state == hck_details::keepalive){
+		//Assert that the DB is in the correct state
+		assert(hck.keepalived.find(h->remote_connection) != hck.keepalived.end());
+		assert(hck.keepalived.find(h->remote_connection)->second == h);
+
+		//Clear the keepalive
 		hck.keepalived.erase(h->remote_connection);
 	}
-	close(h->client_sock);
+
+	//Close sockets
+	close(h->client_sock)
+	close(h->remote_socket);
 
 	//Remove from map
 	hck.sockets.erase(h->remote_socket);
-	//Now we can release the socket
-	close(h->remote_socket);
+
 	//Finally free memory
 	delete h;
 }
@@ -244,7 +241,20 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 	h = hck.sockets[e.data.fd];
 
+	/* Do not pass go, do not collect $200 */
+	/* An error has occured on the socket, time to cleanup */
+	if (e.events & EPOLLERR){
+		if (h->state == hck_details::keepalive){
+			http_cleanup(hck, h);
+		}
+		else{
+			goto send_failure;
+		}
+		return;
+	}
+
 	if (h->state == hck_details::connecting){
+		/* Connection success */
 		if (e.events & EPOLLIN || e.events & EPOLLOUT){
 			e.events = EPOLLOUT;
 			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
@@ -261,7 +271,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			printf("failed to send data (%d)\n", errno);
+			fprintf(stderr, "failed to send data (%d)\n", errno);
 			if (!h->first){
 				goto send_retry;
 			}
@@ -287,7 +297,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			printf("failed to recv data (%d)\n", errno);
+			fprintf(stderr, "failed to recv data (%d)\n", errno);
 			if (!h->first && h->position == 0){
 				goto send_retry;
 			}
@@ -300,7 +310,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				goto send_ok;
 			}
 			else{
-				printf("invalid response (char: %d)\n", respbuff[i] - '0');
+				fprintf(stderr, "invalid response (char: %d)\n", respbuff[i] - '0');
 				goto send_failure;
 			}
 		}
@@ -344,7 +354,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			return;
 		}
 		else{
-			printf("connection interrupted\n");
+			fprintf(stderr, "connection interrupted\n");
 			goto send_failure;
 		}
 	}
@@ -361,6 +371,8 @@ send_ok:
 		h->position = 0;
 		h->state = hck_details::keepalive;
 		h->expires = now + TIMEOUT_POST;
+
+		/* If a keepalive already exists, don't re-add */
 		if (hck.keepalived.find(h->remote_connection) != hck.keepalived.end()) {
 			http_cleanup(hck, h);
 		}
@@ -452,6 +464,9 @@ int create_listener(){
 	return fd;
 }
 
+/*
+Main loop for processing check requests
+*/
 void main_thread(){
 	int n;
 	hck_handle hck;
@@ -483,10 +498,10 @@ void main_thread(){
 
 			e = events[n];
 
-			if (hck.sockets.find(e.data.fd) != hck.sockets.end()){
+			if (hck.sockets.find(e.data.fd) != hck.sockets.end()){ /* handle events for the checks */
 				handle_http(hck, e, now);
 			}
-			else if (e.data.fd == fd){
+			else if (e.data.fd == fd){ /* Handle new connections to the main thread */
 				if (e.events & EPOLLIN){
 					e.data.fd = accept(e.data.fd, 0, 0);
 					epoll_ctl(hck.epfd, EPOLL_CTL_ADD, e.data.fd, &e);
@@ -496,18 +511,26 @@ void main_thread(){
 					return;
 				}
 			}
-			else{
+			else{ /* handle events for a connection to the main thread */
 				if (e.events & EPOLLIN){
 					handle_internalsock(hck, e.data.fd, now);
 				}
-				else{
+				else if (e.events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP)) {
 					//error
+					bool found = false;
 					for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
 						struct hck_details* h = it->second;
 						if (h->client_sock == e.data.fd){
 							h->client_sock = -1;
+							found = true;
 						}
 					}
+
+					/* is it not a client socket? */
+					if (!found){
+						fprintf(strderr, "closing socket %d of unknown type\n", e.data.fd);
+					}
+
 					close(e.data.fd);
 				}
 			}
@@ -722,7 +745,6 @@ extern "C" {
 	{
 		if (fork() == 0){
 			zbx_setproctitle("zabbix_proxy: http check keepalive #1");
-			set_max_open();
 			processing_thread();
 			exit(1);
 		}
