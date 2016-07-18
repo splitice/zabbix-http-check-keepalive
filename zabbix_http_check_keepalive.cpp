@@ -158,7 +158,7 @@ static struct hck_details* create_new_socket(hck_handle* hck, unsigned int socka
 	struct hck_details* h = new struct hck_details;
 	
 	socket_desc = create_new_socket(sockaddr_len, sockaddr, fastopen);
-	if (rc < 0)
+	if (socket_desc == -1)
 	{
 		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS) {
 			perror("error connecting");
