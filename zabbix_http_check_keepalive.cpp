@@ -330,6 +330,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	/* An error has occured on the socket, time to cleanup */
 	if (e.events & EPOLLERR){
 		if (h->state == hck_details::keepalive){
+			zabbix_log(LOG_LEVEL_WARNING, "Closing HTTP keepalive connection due to error");
 			http_cleanup(hck, h);
 		}
 		else{
@@ -427,13 +428,15 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	}
 	else if (h->state == hck_details::keepalive){
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
-		if (rc < 0){
+		if (rc == -1){
+			zabbix_log(LOG_LEVEL_WARNING, "Keepalive connection closing, no longer open");
 			http_cleanup(hck, h);
 			return;
 		}
 	}
 	else if (h->state == hck_details::recovery){
 		if (e.events & EPOLLHUP || e.events & EPOLLRDHUP){
+			zabbix_log(LOG_LEVEL_WARNING, "Keepalive recovery connection closing, no longer open");
 			h->expires = 0;
 			http_cleanup(hck, h);
 			return;
@@ -653,6 +656,8 @@ void main_thread(){
 					handle_internalsock(hck, e.data.fd, now);
 				}
 				else if (e.events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP)) {
+					zabbix_log(LOG_LEVEL_WARNING, "An error occured with client socket %d. Closing", e.data.fd);
+
 					//error
 					bool found = false;
 					for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
@@ -681,7 +686,11 @@ void main_thread(){
 	}
 
 cleanup:
+	zabbix_log(LOG_LEVEL_WARNING, "Zabbix HCK cleanup");
+
 	close(fd);
+
+	//todo: remote socket & keepalive
 	for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
 		close(it->second->client_socket);
 		delete it->second;
