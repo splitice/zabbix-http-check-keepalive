@@ -53,7 +53,7 @@ struct cmp_map {
 		const struct sockaddr& lhs,
 		const struct sockaddr& rhs) const
 	{
-		return std::memcmp(&lhs, &rhs, sizeof(lhs));
+		return std::memcmp(&lhs, &rhs, sizeof(struct sockaddr)) < 0;
 	}
 };
 
