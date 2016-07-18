@@ -386,7 +386,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 							goto send_ok;
 						}
 					}
-					else if (respbuf[i] != '\r'){
+					else if (respbuff[i] != '\r'){
 						nls = 0;
 					}
 				}
@@ -403,14 +403,15 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 		}
 	}
 	if (h->state == hck_details::reading2){
+		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 		uint8_t nls = h->position;
-		for (; i < rc; i++){
+		for (int i = 0; i < rc; i++){
 			if (respbuff[i] == '\n'){
 				if (++nls){
 					goto send_ok;
 				}
 			}
-			else if (respbuf[i] != '\r'){
+			else if (respbuff[i] != '\r'){
 				nls = 0;
 			}
 		}
