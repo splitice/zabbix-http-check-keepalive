@@ -120,20 +120,16 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 	return NULL;
 }
 
-static struct hck_details* create_new_socket(hck_handle* hck, unsigned int sockaddr_len, struct sockaddr sockaddr, time_t now, int source, bool fastopen = true) {
-	struct hck_details* h = new struct hck_details;
+
+static struct int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr, bool fastopen = true) {
 	int socket_desc;
-	struct epoll_event e;
 	int rc;
 
 	//Create socket
 	socket_desc = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if (socket_desc == -1)
 	{
-		perror("error creating remote socket");
-		close(h->client_socket);
-		delete h;
-		return NULL;
+		return 0;
 	}
 
 	//Connect to remote server
@@ -149,6 +145,20 @@ static struct hck_details* create_new_socket(hck_handle* hck, unsigned int socka
 #else
 	rc = connect(socket_desc, &sockaddr, sockaddr_len);
 #endif
+	if (rc >= 0){
+		return socket_desc;
+	}
+	else{
+		return rc;
+	}
+}
+
+static struct hck_details* create_new_socket(hck_handle* hck, unsigned int sockaddr_len, struct sockaddr sockaddr, time_t now, int source, bool fastopen = true) {
+	int rc, socket_desc;
+	struct epoll_event e;
+	struct hck_details* h = new struct hck_details;
+	
+	socket_desc = create_new_socket(sockaddr_len, sockaddr, fastopen);
 	if (rc < 0)
 	{
 		if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINPROGRESS) {
@@ -275,7 +285,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				hck.sockets.erase(e.data.fd);
 
 				close(h->remote_socket);
-				h->remote_socket = create_new_socket(&hck, h->remote_connection_len, h->remote_connection, now, h->client_socket, false);
+				h->remote_socket = create_new_socket(h->remote_connection_len, h->remote_connection, false);
 				hck.sockets[h->remote_socket] = h;
 
 				return;
