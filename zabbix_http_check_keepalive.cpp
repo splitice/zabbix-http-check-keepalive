@@ -541,7 +541,7 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		if (h->expires < now){
 			to_delete.push_back(it->first);
 
-			zabbix_log(LOG_LEVEL_WARNING, "Expiring socket %d in state %d", h->remote_scoket, h->state));
+			zabbix_log(LOG_LEVEL_WARNING, "Expiring socket %d in state %d", h->remote_socket, h->state));
 		}
 	}
 	for (std::vector<int>::iterator it = to_delete.begin(); it != to_delete.end(); it++){
@@ -616,6 +616,8 @@ void main_thread(){
 	e.data.fd = fd;
 	e.events = EPOLLIN;
 	epoll_ctl(hck.epfd, EPOLL_CTL_ADD, fd, &e);
+
+	zabbix_log(LOG_LEVEL_WARNING, "Zabbix HCK Main thread started");
 
 	while (running){
 		/* Update timestamp once per loop */
