@@ -635,7 +635,7 @@ int create_listener(){
 	unlink(socket_path);
 
 	if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-		perror("bind error");
+		hck_log(LOG_LEVEL_WARNING, "bind error (%d): Unable to bind to \\0%s", errno, addr+1);
 		return -1;
 	}
 
