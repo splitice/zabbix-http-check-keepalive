@@ -756,6 +756,7 @@ cleanup:
 	hck_log(LOG_LEVEL_WARNING, "Zabbix HCK cleanup");
 
 	close(fd);
+	close(hck.epfd);
 
 	//todo: remote socket & keepalive
 	for (map<int, struct hck_details*>::iterator it = hck.sockets.begin(); it != hck.sockets.end(); it++){
