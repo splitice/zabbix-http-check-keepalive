@@ -635,7 +635,7 @@ int create_listener(){
 	unlink(socket_path);
 
 	if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-		hck_log(LOG_LEVEL_WARNING, "bind error (%d): Unable to bind to \\0%s", errno, addr+1);
+		hck_log(LOG_LEVEL_WARNING, "bind error (%d): Unable to bind to \\0%s", errno, socket_path+1);
 		return -1;
 	}
 
@@ -677,6 +677,7 @@ void main_thread(){
 	/* Create internal listener */
 	fd = create_listener();
 	if (fd == -1){
+		close(hck.epfd);
 		return;
 	}
 
