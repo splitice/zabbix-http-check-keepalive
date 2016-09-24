@@ -763,7 +763,7 @@ cleanup:
 	}
 }
 
-unsigned short execute_check(int fd, const char* addr, const char* port, bool retry = true){
+unsigned short execute_check(int fd, const char* addr, const char* port, bool retry){
 	int rc;
 	unsigned short result;
 	struct addrinfo hints;
