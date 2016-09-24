@@ -10,7 +10,7 @@ extern bool running;
 void hck_log(int level, const char *fmt, ...){
 	va_list args;
     va_start(args, fmt);
-    vprintf(errbuf, fmt, args);
+    vprintf(fmt, args);
     va_end(args);
 	puts("");
 }
