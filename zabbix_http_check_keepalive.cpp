@@ -1,6 +1,6 @@
 #include "sysinc.h"
 #include "module.h"
-#include "hck_engine.cpp"
+#include "hck_engine.h"
 
 extern "C" {
 	#include "common.h"

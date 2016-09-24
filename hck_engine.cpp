@@ -18,7 +18,7 @@
 #include <functional>
 #include <functional>
 #include <cstring>
-#include "hck_engine.cpp"
+#include "hck_engine.h"
 
 
 const char http_request[] = "HEAD / HTTP/1.0\r\nConnection:Keep-Alive\r\n\r\n";
