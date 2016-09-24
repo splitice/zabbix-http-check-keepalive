@@ -556,37 +556,33 @@ send_retry:
 	return;
 }
 
+static bool read_all(int socket, char* ptr, int required)
+{
+	int rc;
+	do {
+		rc = recv(socket, ptr, required, MSG_WAITALL);
+		if (rc == -1 || rc == 0) {
+			close(socket);
+			return false;
+		}
+		ptr += rc;
+		required -= rc;
+	} while (required);
+	return true;
+}
+
 // handle internal communication
 void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	struct addrinfo servinfo;
 	sockaddr_storage s = { 0 };
 	int rc;
 
-	//read addr
-	int required = sizeof(servinfo);
-	void* ptr = &servinfo;
-	do {
-		rc = recv(socket, ptr, required, MSG_WAITALL);
-		if (rc == -1 || rc == 0){
-			close(socket);
-			return;
-		}
-		ptr += rc;
-		required -= rc;
-	} while (required);
+	//read addr	
+	if (!read_all(socket, (char*)&servinfo.ai_family, sizeof(int))) return;
+	if (!read_all(socket, (char*)&servinfo.ai_addrlen, sizeof(int))) return;
 	
 	//read sockaddr
-	required = servinfo.ai_addrlen;
-	ptr = &s;
-	do {
-		rc = recv(socket, ptr, required, MSG_WAITALL);
-		if (rc == -1 || rc == 0) {
-			close(socket);
-			return;
-		}
-		ptr += rc;
-		required -= rc;
-	} while (required);
+	if (!read_all(socket, (char*)&s, servinfo.ai_addrlen)) return;
 	
 	if (!check_add(&hck, servinfo, s, now, socket)) {
 		//close on error
@@ -787,7 +783,14 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 		return 4;
 	}
 	
-	rc = send(fd, (void*)servinfo, sizeof(addrinfo), 0);
+	rc = send(fd, &servinfo->ai_family, sizeof(int), 0);
+	if (rc < 0) {
+		freeaddrinfo(servinfo); // free the linked-list
+		hck_log(LOG_LEVEL_WARNING, "io error during send[0] to %s:%s: error %d", addr, port, errno);
+		return 4;
+	}
+	
+	rc = send(fd, &servinfo->ai_addrlen, sizeof(int), 0);
 	if (rc < 0) {
 		freeaddrinfo(servinfo); // free the linked-list
 		hck_log(LOG_LEVEL_WARNING, "io error during send[1] to %s:%s: error %d", addr, port, errno);
