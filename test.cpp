@@ -26,10 +26,13 @@ static void start_engine(){
 
 TEST_CASE( "IPv4 Test to Online Host" ) {
     start_engine();
+	int fd = connect_to_hck();
 	
-	unsigned short result = execute_check("216.58.194.174","80");
+	unsigned short result = execute_check(fd, "216.58.194.174","80");
 	
 	REQUIRE( result == 1 );
+	
+	close(fd);
 	
 	running = false;
 	while(!shutdown){
@@ -39,10 +42,13 @@ TEST_CASE( "IPv4 Test to Online Host" ) {
 
 TEST_CASE( "IPv4 Test to Offline Host" ) {
     start_engine();
+	int fd = connect_to_hck();
 	
-	unsigned short result = execute_check("127.123.123.123","14");
+	unsigned short result = execute_check(fd, "127.123.123.123","14");
 	
 	REQUIRE( result == 0 );
+	
+	close(fd);
 	
 	running = false;
 	while(!shutdown){
