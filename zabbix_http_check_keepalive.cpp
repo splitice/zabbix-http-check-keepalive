@@ -16,6 +16,17 @@ static ZBX_METRIC keys[] =
 	{ NULL }
 };
 
+void hck_log(int level, const char *fmt, ...){
+	char errbuf[1024];
+	
+	va_list args;
+    va_start(args, format);
+    vfprintf(errbuf, fmt, args);
+    va_end(args);
+	
+	zabbix_log(level, "%s", errbuf);
+}
+
 
 extern "C" {
 	/******************************************************************************

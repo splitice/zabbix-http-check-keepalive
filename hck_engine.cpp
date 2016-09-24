@@ -18,6 +18,7 @@
 #include <functional>
 #include <functional>
 #include <cstring>
+#include <assert.h>
 #include "hck_engine.h"
 
 
@@ -30,6 +31,17 @@ int http_resp_startlen = sizeof("HTTP/1.0 ");//or "HTTP 1.1" same length
 #define TIMEOUT_RECOVER 3
 #define TIMEOUT_NEW 4
 #define TIMEOUT_POST 60
+
+#define LOG_LEVEL_EMPTY         0       /* printing nothing (if not LOG_LEVEL_INFORMATION set) */
+#define LOG_LEVEL_CRIT          1
+#define LOG_LEVEL_ERR           2
+#define LOG_LEVEL_WARNING       3
+#define LOG_LEVEL_DEBUG         4
+#define LOG_LEVEL_TRACE         5
+#define LOG_LEVEL_INFORMATION   127     /* printing in any case no matter what level set */
+
+
+void hck_log(int level, const char *fmt, ...);
 
 const char *socket_path = "\0hck";
 volatile int running = 1;
@@ -114,7 +126,7 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 		rc = epoll_ctl(hck->epfd, EPOLL_CTL_MOD, h->remote_socket, &e);
 		if (rc < 0)
 		{
-			zabbix_log(LOG_LEVEL_WARNING, "Unable to mod socket epoll for recovery: %s", strerror(errno));
+			hck_log(LOG_LEVEL_WARNING, "Unable to mod socket epoll for recovery: %s", strerror(errno));
 			return NULL;
 		}
 
@@ -168,7 +180,7 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 	socket_desc = create_new_socket(sockaddr_len, sockaddr, fastopen);
 	if (socket_desc == -1)
 	{
-		zabbix_log(LOG_LEVEL_WARNING, "Unable to create new socket: %s", strerror(errno));
+		hck_log(LOG_LEVEL_WARNING, "Unable to create new socket: %s", strerror(errno));
 		goto error;
 	}
 
@@ -207,7 +219,7 @@ static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr
 	rc = epoll_ctl(hck->epfd, EPOLL_CTL_ADD, socket_desc, &e);
 	if (rc < 0)
 	{
-		zabbix_log(LOG_LEVEL_WARNING, "Unable to add socket to epoll: %s", strerror(errno));
+		hck_log(LOG_LEVEL_WARNING, "Unable to add socket to epoll: %s", strerror(errno));
 		goto error;
 	}
 
@@ -305,7 +317,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
 			if (rc < 0)
 			{
-				zabbix_log(LOG_LEVEL_WARNING, "Unable to mod epoll: %s", strerror(errno));
+				hck_log(LOG_LEVEL_WARNING, "Unable to mod epoll: %s", strerror(errno));
 			}
 			h->state = hck_details::writing;
 		}
@@ -337,12 +349,12 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	/* An error has occured on the socket, time to cleanup */
 	if (e.events & EPOLLERR){
 		if (h->state == hck_details::keepalive){
-			zabbix_log(LOG_LEVEL_WARNING, "Closing HTTP keepalive connection due to error");
+			hck_log(LOG_LEVEL_WARNING, "Closing HTTP keepalive connection due to error");
 			http_cleanup(hck, h);
 		}
 		else{
 			recv(e.data.fd, 0, 0, 0);
-			zabbix_log(LOG_LEVEL_WARNING, "Sending failure due to error: %s", strerror(errno));
+			hck_log(LOG_LEVEL_WARNING, "Sending failure due to error: %s", strerror(errno));
 			goto send_failure;
 		}
 		return;
@@ -354,7 +366,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			zabbix_log(LOG_LEVEL_WARNING, "HCK: failed to send data (%s)\n", strerror(errno));
+			hck_log(LOG_LEVEL_WARNING, "HCK: failed to send data (%s)\n", strerror(errno));
 			if (!h->first){
 				goto send_retry;
 			}
@@ -369,7 +381,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
 			if (rc < 0)
 			{
-				zabbix_log(LOG_LEVEL_WARNING, "epoll mod error: %s", strerror(errno));
+				hck_log(LOG_LEVEL_WARNING, "epoll mod error: %s", strerror(errno));
 			}
 		}
 	}
@@ -381,7 +393,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			if (errno == EAGAIN || errno == EWOULDBLOCK){
 				return;
 			}
-			zabbix_log(LOG_LEVEL_WARNING, "HCK: failed to recv data (%s)\n", strerror(errno));
+			hck_log(LOG_LEVEL_WARNING, "HCK: failed to recv data (%s)\n", strerror(errno));
 			if (!h->first && h->position == 0){
 				goto send_retry;
 			}
@@ -410,7 +422,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 				h->position = nls;
 			}
 			else{
-				zabbix_log(LOG_LEVEL_WARNING, "HCK: invalid response (char: %d)\n", respbuff[i] - '0');
+				hck_log(LOG_LEVEL_WARNING, "HCK: invalid response (char: %d)\n", respbuff[i] - '0');
 				goto send_failure;
 			}
 		}
@@ -438,14 +450,14 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	else if (h->state == hck_details::keepalive){
 		rc = recv(e.data.fd, respbuff, sizeof(respbuff), 0);
 		if (rc == -1){
-			zabbix_log(LOG_LEVEL_WARNING, "Keepalive connection closing, no longer open");
+			hck_log(LOG_LEVEL_WARNING, "Keepalive connection closing, no longer open");
 			http_cleanup(hck, h);
 			return;
 		}
 	}
 	else if (h->state == hck_details::recovery){
 		if (e.events & EPOLLHUP || e.events & EPOLLRDHUP || e.events & EPOLLERR){
-			zabbix_log(LOG_LEVEL_WARNING, "Keepalive recovery connection closing, no longer open");
+			hck_log(LOG_LEVEL_WARNING, "Keepalive recovery connection closing, no longer open");
 			h->expires = 0;
 			http_cleanup(hck, h);
 			return;
@@ -458,12 +470,12 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 	if (e.events & EPOLLOUT == 0 && e.events & EPOLLIN == 0 && (e.events & EPOLLHUP || e.events & EPOLLRDHUP)){
 		if (h->state == hck_details::keepalive){
-			zabbix_log(LOG_LEVEL_WARNING, "Keepalive connection closed");
+			hck_log(LOG_LEVEL_WARNING, "Keepalive connection closed");
 			http_cleanup(hck, h);
 			return;
 		}
 		else{
-			zabbix_log(LOG_LEVEL_WARNING, "HCK: connection interrupted\n");
+			hck_log(LOG_LEVEL_WARNING, "HCK: connection interrupted\n");
 			goto send_failure;
 		}
 	}
@@ -472,7 +484,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 
 send_ok:
 	if (!send_result(&hck, h->client_socket, 1)){
-		zabbix_log(LOG_LEVEL_WARNING, "Failed to send ok: %s", strerror(errno));
+		hck_log(LOG_LEVEL_WARNING, "Failed to send ok: %s", strerror(errno));
 		http_cleanup(hck, h);
 		return;
 	}
@@ -484,7 +496,7 @@ send_ok:
 		/* If a keepalive already exists, don't re-add */
 		if (hck.keepalived.find(h->remote_connection) != hck.keepalived.end()) {
 			assert(hck.keepalived[h->remote_connection] != h->remote_socket);
-			zabbix_log(LOG_LEVEL_WARNING, "Extra connection was opened, no longer needed - a keepalived connection exists.");
+			hck_log(LOG_LEVEL_WARNING, "Extra connection was opened, no longer needed - a keepalived connection exists.");
 			http_cleanup(hck, h);
 		}
 		else 
@@ -553,7 +565,7 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		if (h->expires < now){
 			to_delete.push_back(it->first);
 
-			zabbix_log(LOG_LEVEL_WARNING, "Expiring socket %d in state %d", h->remote_socket, h->state);
+			hck_log(LOG_LEVEL_WARNING, "Expiring socket %d in state %d", h->remote_socket, h->state);
 		}
 	}
 	for (std::vector<int>::iterator it = to_delete.begin(); it != to_delete.end(); it++){
@@ -639,7 +651,7 @@ void main_thread(){
 	e.events = EPOLLIN;
 	epoll_ctl(hck.epfd, EPOLL_CTL_ADD, fd, &e);
 
-	zabbix_log(LOG_LEVEL_WARNING, "Zabbix HCK Main thread started");
+	hck_log(LOG_LEVEL_WARNING, "Zabbix HCK Main thread started");
 
 	while (running){
 		/* Update timestamp once per loop */
@@ -660,7 +672,7 @@ void main_thread(){
 					/* Accept & Add to EPOLL */
 					e.data.fd = accept(e.data.fd, 0, 0);
 					if (e.data.fd == -1){
-						zabbix_log(LOG_LEVEL_WARNING, "Unable to accept internal communication socket: %s", strerror(errno));
+						hck_log(LOG_LEVEL_WARNING, "Unable to accept internal communication socket: %s", strerror(errno));
 						continue;
 					}
 					set_blocking_mode(e.data.fd, true);
@@ -676,7 +688,7 @@ void main_thread(){
 					handle_internalsock(hck, e.data.fd, now);
 				}
 				else if (e.events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP)) {
-					zabbix_log(LOG_LEVEL_WARNING, "An error occured with client socket %d. Closing", e.data.fd);
+					hck_log(LOG_LEVEL_WARNING, "An error occured with client socket %d. Closing", e.data.fd);
 
 					//error
 					bool found = false;
@@ -691,7 +703,7 @@ void main_thread(){
 
 					/* is it not a client socket? */
 					if (!found){
-						zabbix_log(LOG_LEVEL_WARNING, "HCK: closing socket %d of unknown type\n", e.data.fd);
+						hck_log(LOG_LEVEL_WARNING, "HCK: closing socket %d of unknown type\n", e.data.fd);
 					}
 
 					close(e.data.fd);
@@ -706,7 +718,7 @@ void main_thread(){
 	}
 
 cleanup:
-	zabbix_log(LOG_LEVEL_WARNING, "Zabbix HCK cleanup");
+	hck_log(LOG_LEVEL_WARNING, "Zabbix HCK cleanup");
 
 	close(fd);
 
