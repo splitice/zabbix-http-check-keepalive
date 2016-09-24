@@ -17,7 +17,6 @@ void hck_log(int level, const char *fmt, ...){
 
 static void start_engine(){
 	if (fork() == 0){
-		zbx_setproctitle("zabbix_proxy: http check keepalive #1");
 		shutdown = false;
 		processing_thread();
 		shutdown = true;
