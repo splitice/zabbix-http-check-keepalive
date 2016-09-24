@@ -57,3 +57,19 @@ TEST_CASE( "IPv4 Test to Offline Host" ) {
 		sleep(1);
 	}
 }
+
+TEST_CASE( "IPv4 Test to Online Host" ) {
+    start_engine();
+	int fd = connect_to_hck();
+	
+	unsigned short result = execute_check(fd, "2001:41d0:8:e8ad::1","80");
+	
+	REQUIRE( result == 1 );
+	
+	close(fd);
+	
+	running = false;
+	while(!shutdown){
+		sleep(1);
+	}
+}
