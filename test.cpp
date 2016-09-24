@@ -56,9 +56,17 @@ static void finish_up()
 	pthread_join(thread1, NULL);
 }
 
+int fd = 0;
+
 TEST_CASE("Engine tests") {
+	if (fd != 0)
+	{
+		close(fd);
+		fd = 0;
+		finish_up();
+	}
 	start_engine();
-	int fd = connect_to_hck_retry();
+	fd = connect_to_hck_retry();
 
 	SECTION("Engine start") {
 		REQUIRE(fd >= 0);
@@ -83,6 +91,6 @@ TEST_CASE("Engine tests") {
 	}
 	
 	close(fd);
-	
 	finish_up();
+	fd = 0;
 }

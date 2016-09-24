@@ -34,3 +34,4 @@ Debug/
 Release/
 SourceCache.dat
 *.vgdbsettings
+*.opendb

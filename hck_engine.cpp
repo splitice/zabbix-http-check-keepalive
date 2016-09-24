@@ -173,9 +173,10 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 static int create_new_socket(unsigned int sockaddr_len, struct sockaddr_storage sockaddr, bool fastopen = true) {
 	int socket_desc;
 	int rc;
-
+	struct sockaddr* sa = (struct sockaddr*)&sockaddr;
+	
 	//Create socket
-	socket_desc = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+	socket_desc = socket(sa->sa_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if (socket_desc == -1)
 	{
 		return -1;
@@ -185,11 +186,11 @@ static int create_new_socket(unsigned int sockaddr_len, struct sockaddr_storage 
 #ifdef MSG_FASTOPEN
 	if (fastopen)
 	{
-		rc = sendto(socket_desc, http_request, http_request_size, MSG_FASTOPEN, (struct sockaddr*)&sockaddr, sockaddr_len);
+		rc = sendto(socket_desc, http_request, http_request_size, MSG_FASTOPEN, sa, sockaddr_len);
 	}
 	else
 	{
-		rc = connect(socket_desc, (struct sockaddr*)&sockaddr, sockaddr_len);
+		rc = connect(socket_desc, sa, sockaddr_len);
 	}
 #else
 	rc = connect(socket_desc, &sockaddr, sockaddr_len);
@@ -691,6 +692,7 @@ void main_thread(){
 
 	hck_log(LOG_LEVEL_WARNING, "Zabbix HCK Main thread started on \\0%s", socket_path+1);
 
+	assert(running);
 	while (running){
 		/* Update timestamp once per loop */
 		time(&now);
@@ -785,21 +787,22 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 		perror("get addr info failed");
 		return 4;
 	}
-
-	rc = send(fd, (void*)servinfo->ai_addr, sizeof(*servinfo->ai_addr), 0);
-	if (rc < 0){
-		freeaddrinfo(servinfo); // free the linked-list
-		perror("io error during send (1)");
-		return 4;
-	}
-
+	
+	
 	rc = send(fd, (void*)servinfo, sizeof(addrinfo), 0);
-	if (rc < 0){
+	if (rc < 0) {
 		freeaddrinfo(servinfo); // free the linked-list
 		perror("io error during send (2)");
 		return 4;
 	}
 	freeaddrinfo(servinfo); // free the linked-list
+
+	rc = send(fd, (void*)servinfo->ai_addr, servinfo->ai_addrlen, 0);
+	if (rc < 0){
+		freeaddrinfo(servinfo); // free the linked-list
+		perror("io error during send (1)");
+		return 4;
+	}
 
 	int required = sizeof(result);
 	void* ptr = &result;
