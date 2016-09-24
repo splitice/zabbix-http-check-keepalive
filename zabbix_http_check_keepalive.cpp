@@ -21,7 +21,7 @@ void hck_log(int level, const char *fmt, ...){
 	
 	va_list args;
     va_start(args, format);
-    vfprintf(errbuf, fmt, args);
+    vsprintf(errbuf, fmt, args);
     va_end(args);
 	
 	zabbix_log(level, "%s", errbuf);

@@ -16,9 +16,10 @@
 #include <stdlib.h>
 #include <netdb.h>
 #include <functional>
-#include <functional>
 #include <cstring>
 #include <assert.h>
+#include <stdio.h>
+#include <string.h>
 #include "hck_engine.h"
 
 
