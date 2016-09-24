@@ -45,7 +45,7 @@ int http_resp_startlen = sizeof("HTTP/1.0 ");//or "HTTP 1.1" same length
 
 void hck_log(int level, const char *fmt, ...);
 
-const char *socket_path = "\0hck";
+extern const char *socket_path;
 volatile int running = 1;
 
 using namespace std;

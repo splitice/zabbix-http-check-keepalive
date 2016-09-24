@@ -2,6 +2,8 @@
 #include "module.h"
 #include "hck_engine.h"
 
+const char *socket_path = "\0hck";
+
 extern "C" {
 	#include "common.h"
 	#include "log.h"
