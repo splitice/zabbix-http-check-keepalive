@@ -7,7 +7,7 @@
 static bool shutdown = true;
 extern bool running;
 
-const char *socket_path = "\0hcktest";
+const char *socket_path = "\0hct";
 
 void hck_log(int level, const char *fmt, ...){
 	va_list args;
