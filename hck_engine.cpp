@@ -783,21 +783,21 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
 
 	if ((rc = getaddrinfo(addr, port, &hints, &servinfo)) != 0) {
-		perror("get addr info failed");
+		hck_log(LOG_LEVEL_CRIT, "getaddrinfo failed for %s:%s: error %d", addr, port, errno);
 		return 4;
 	}
 	
 	rc = send(fd, (void*)servinfo, sizeof(addrinfo), 0);
 	if (rc < 0) {
 		freeaddrinfo(servinfo); // free the linked-list
-		perror("io error during send (2)");
+		hck_log(LOG_LEVEL_WARNING, "io error during send[1] to %s:%s: error %d", addr, port, errno);
 		return 4;
 	}
 	freeaddrinfo(servinfo); // free the linked-list
 
 	rc = send(fd, (void*)servinfo->ai_addr, servinfo->ai_addrlen, 0);
 	if (rc < 0){
-		perror("io error during send (1)");
+		hck_log(LOG_LEVEL_WARNING, "io error during send[2] to %s:%s: error %d", addr, port, errno);
 		return 4;
 	}
 
@@ -806,11 +806,11 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	do {
 		rc = recv(fd, ptr, required, MSG_WAITALL);
 		if (rc == 0){
-			perror("socket shutdown, no more data");
+			hck_log(LOG_LEVEL_WARNING, "io error during recv[1] to %s:%s: no more data", addr, port);
 			return 4;
 		}
 		if (rc == -1){
-			perror("io error during recv");
+			hck_log(LOG_LEVEL_WARNING, "io error during recv[1] to %s:%s: %d", addr, port, errno);
 			return 4;
 		}
 		required -= rc;
