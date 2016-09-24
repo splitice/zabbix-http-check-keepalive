@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdarg.h>
 #define CATCH_CONFIG_MAIN
 #include "Catch.hpp"
 #include "hck_engine.h"
