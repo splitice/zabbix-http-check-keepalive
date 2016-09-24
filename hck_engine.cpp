@@ -793,13 +793,13 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 		hck_log(LOG_LEVEL_WARNING, "io error during send[1] to %s:%s: error %d", addr, port, errno);
 		return 4;
 	}
-	freeaddrinfo(servinfo); // free the linked-list
 
 	rc = send(fd, (void*)servinfo->ai_addr, servinfo->ai_addrlen, 0);
 	if (rc < 0){
 		hck_log(LOG_LEVEL_WARNING, "io error during send[2] to %s:%s: error %d", addr, port, errno);
 		return 4;
 	}
+	freeaddrinfo(servinfo); // free the linked-list
 
 	int required = sizeof(result);
 	void* ptr = &result;
