@@ -21,3 +21,16 @@
 *.i*86
 *.x86_64
 *.hex
+
+CodeDB/
+gcc_*
+*.TMP
+*.suo
+.vs
+*.sln
+*.vcxproj*
+*.db
+Debug/
+Release/
+SourceCache.dat
+*.vgdbsettings

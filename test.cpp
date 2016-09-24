@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <stdarg.h>
+#include <pthread.h>
+
 #define CATCH_CONFIG_MAIN
 #include "Catch.hpp"
 #include "hck_engine.h"
 
-static bool shutdown = true;
-extern bool running;
+static volatile int shutdown = 1;
+extern volatile int running;
 
 const char *socket_path = "\0hct";
 
@@ -15,61 +17,72 @@ void hck_log(int level, const char *fmt, ...){
     vprintf(fmt, args);
     va_end(args);
 	puts("");
+	fflush(stdout);
 }
 
+static void* thread_function(void*)
+{
+	running = 1;
+	shutdown = 0;
+	processing_thread();
+	assert(!running);
+	shutdown = 1;
+}
+
+
+pthread_t thread1;
 static void start_engine(){
-	if (fork() == 0){
-		shutdown = false;
-		processing_thread();
-		shutdown = true;
-		exit(1);
-	}
+	int iret1 = pthread_create(&thread1, NULL, thread_function, NULL);
+	sleep(1);
 }
 
-TEST_CASE( "IPv4 Test to Online Host" ) {
-    start_engine();
+static int connect_to_hck_retry()
+{
 	int fd = connect_to_hck();
+	for (int i = 0;fd < 0 && i < 8;i++)
+	{
+		sleep(1);
+		fd = connect_to_hck();
+	}
+	return fd;
+}
+
+static void finish_up()
+{
+	running = false;
+	while (!shutdown) {
+		sleep(1);
+	}
+	pthread_join(thread1, NULL);
+}
+
+TEST_CASE("Engine tests") {
+	start_engine();
+	int fd = connect_to_hck_retry();
+
+	SECTION("Engine start") {
+		REQUIRE(fd >= 0);
+	}
 	
-	unsigned short result = execute_check(fd, "216.58.194.174","80");
+	SECTION("IPv4 Test to Online Host") {
+		unsigned short result = execute_check(fd, "216.58.194.174", "80");
 	
-	REQUIRE( result == 1 );
+		REQUIRE(result == 1);
+	}
+
+	SECTION("IPv4 Test to Offline Host") {
+		unsigned short result = execute_check(fd, "127.123.123.123", "14");
+	
+		REQUIRE(result == 0);
+	}
+
+	SECTION("IPv6 Test to Online Host") {
+		unsigned short result = execute_check(fd, "2001:41d0:8:e8ad::1", "80");
+	
+		REQUIRE(result == 1);
+	}
 	
 	close(fd);
 	
-	running = false;
-	while(!shutdown){
-		sleep(1);
-	}
-}
-
-TEST_CASE( "IPv4 Test to Offline Host" ) {
-    start_engine();
-	int fd = connect_to_hck();
-	
-	unsigned short result = execute_check(fd, "127.123.123.123","14");
-	
-	REQUIRE( result == 0 );
-	
-	close(fd);
-	
-	running = false;
-	while(!shutdown){
-		sleep(1);
-	}
-}
-
-TEST_CASE( "IPv6 Test to Online Host" ) {
-    start_engine();
-	int fd = connect_to_hck();
-	
-	unsigned short result = execute_check(fd, "2001:41d0:8:e8ad::1","80");
-	
-	REQUIRE( result == 1 );
-	
-	close(fd);
-	
-	running = false;
-	while(!shutdown){
-		sleep(1);
-	}
+	finish_up();
 }

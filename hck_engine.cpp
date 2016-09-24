@@ -84,10 +84,10 @@ hck_strlcpy(char *dst, const char *src, size_t siz)
 
 struct cmp_map {
 	bool operator()(
-		const struct sockaddr& lhs,
-		const struct sockaddr& rhs) const
+		const struct sockaddr_storage& lhs,
+		const struct sockaddr_storage& rhs) const
 	{
-		return std::memcmp(&lhs, &rhs, sizeof(struct sockaddr)) < 0;
+		return std::memcmp(&lhs, &rhs, sizeof(struct sockaddr_storage)) < 0;
 	}
 };
 
@@ -96,7 +96,7 @@ struct hck_details {
 	time_t expires;
 	int client_socket;
 	int remote_socket;
-	struct sockaddr remote_connection;
+	struct sockaddr_storage remote_connection;
 	unsigned int remote_connection_len : 8;
 	unsigned short position : 16;
 	enum {
@@ -116,7 +116,7 @@ class hck_handle {
 public:
 	int epfd;
 	map<int, struct hck_details*> sockets;
-	map<struct sockaddr, int, struct cmp_map> keepalived;
+	map<struct sockaddr_storage, int, struct cmp_map> keepalived;
 };
 
 //send result from worker -> process
@@ -131,8 +131,8 @@ bool send_result(hck_handle* hck, int sock, unsigned short result){
 	return rc >= 0;
 }
 
-static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,  struct sockaddr sockaddr, time_t now, int source) {
-	map<struct sockaddr, int>::iterator it;
+static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len, struct sockaddr_storage sockaddr, time_t now, int source) {
+	map<struct sockaddr_storage, int>::iterator it;
 	struct epoll_event e;
 	int rc;
 
@@ -170,7 +170,7 @@ static hck_details* keepalive_lookup(hck_handle* hck, unsigned int sockaddr_len,
 	return NULL;
 }
 
-static int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr, bool fastopen = true) {
+static int create_new_socket(unsigned int sockaddr_len, struct sockaddr_storage sockaddr, bool fastopen = true) {
 	int socket_desc;
 	int rc;
 
@@ -185,11 +185,11 @@ static int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr
 #ifdef MSG_FASTOPEN
 	if (fastopen)
 	{
-		rc = sendto(socket_desc, http_request, http_request_size, MSG_FASTOPEN, &sockaddr, sockaddr_len);
+		rc = sendto(socket_desc, http_request, http_request_size, MSG_FASTOPEN, (struct sockaddr*)&sockaddr, sockaddr_len);
 	}
 	else
 	{
-		rc = connect(socket_desc, &sockaddr, sockaddr_len);
+		rc = connect(socket_desc, (struct sockaddr*)&sockaddr, sockaddr_len);
 	}
 #else
 	rc = connect(socket_desc, &sockaddr, sockaddr_len);
@@ -206,7 +206,7 @@ static int create_new_socket(unsigned int sockaddr_len, struct sockaddr sockaddr
 	}
 }
 
-static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr_len, struct sockaddr sockaddr, time_t now, int source, bool fastopen = true) {
+static struct hck_details* create_new_hck(hck_handle* hck, unsigned int sockaddr_len, struct sockaddr_storage sockaddr, time_t now, int source, bool fastopen = true) {
 	int rc, socket_desc;
 	struct epoll_event e;
 	struct hck_details* h = NULL;
@@ -275,7 +275,7 @@ error:
 }
 
 // add a check in the worker
-bool check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr sockaddr, time_t now, int source, bool tfo = true){
+bool check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_storage sockaddr, time_t now, int source, bool tfo = true){
 	struct hck_details* h;
 
 	h = keepalive_lookup(hck, addr.ai_addrlen, sockaddr, now, source);
@@ -557,16 +557,13 @@ send_retry:
 
 // handle internal communication
 void handle_internalsock(hck_handle& hck, int socket, time_t now){
-	struct {
-		struct sockaddr sa;
-		struct addrinfo servinfo;
-	} buf;
+	struct addrinfo servinfo;
+	sockaddr_storage s = { 0 };
 	int rc;
 
-	assert(sizeof(buf.sa) + sizeof(buf.servinfo) == sizeof(buf));
-
-	int required = sizeof(buf);
-	void* ptr = &buf;
+	//read addr
+	int required = sizeof(servinfo);
+	void* ptr = &servinfo;
 	do {
 		rc = recv(socket, ptr, required, MSG_WAITALL);
 		if (rc == -1 || rc == 0){
@@ -576,15 +573,21 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 		ptr += rc;
 		required -= rc;
 	} while (required);
-
-	int sa_zero = sizeof(buf.sa) - buf.servinfo.ai_addrlen;
-	assert(sa_zero >= 0);
-	if (sa_zero != 0){
-		//clear end of struct for when doing memcmp lookup
-		memset(&buf.sa + sa_zero, 0, sa_zero);
-	}
-
-	if (!check_add(&hck, buf.servinfo, buf.sa, now, socket)){
+	
+	//read sockaddr
+	required = servinfo.ai_addrlen;
+	ptr = &s;
+	do {
+		rc = recv(socket, ptr, required, MSG_WAITALL);
+		if (rc == -1 || rc == 0) {
+			close(socket);
+			return;
+		}
+		ptr += rc;
+		required -= rc;
+	} while (required);
+	
+	if (!check_add(&hck, servinfo, s, now, socket)) {
 		//close on error
 		close(socket);
 	}
@@ -634,7 +637,7 @@ int create_listener(){
 
 	unlink(socket_path);
 
-	if (bind(fd, (struct sockaddr*)&addr, SUN_LEN(&addr)) == -1) {
+	if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
 		hck_log(LOG_LEVEL_WARNING, "bind error (%d): Unable to bind to \\0%s", errno, socket_path+1);
 		return -1;
 	}
@@ -686,13 +689,13 @@ void main_thread(){
 	e.events = EPOLLIN;
 	epoll_ctl(hck.epfd, EPOLL_CTL_ADD, fd, &e);
 
-	hck_log(LOG_LEVEL_WARNING, "Zabbix HCK Main thread started");
+	hck_log(LOG_LEVEL_WARNING, "Zabbix HCK Main thread started on \\0%s", socket_path+1);
 
 	while (running){
 		/* Update timestamp once per loop */
 		time(&now);
 
-		n = epoll_wait(hck.epfd, events, MAXEVENTS, 1000);
+		n = epoll_wait(hck.epfd, events, MAXEVENTS, 100);
 		while (n > 0){
 			n--;
 
@@ -852,6 +855,7 @@ int connect_to_hck(){
 }
 
 void handle_sighup(int signal){
+	hck_log(LOG_LEVEL_DEBUG, "Sighup received");
 	running = 0;
 }
 
@@ -874,7 +878,4 @@ void processing_thread(){
 	while (running){
 		main_thread();
 	}
-
-	// As far as we go
-	exit(0);
 }
