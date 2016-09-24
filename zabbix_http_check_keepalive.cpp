@@ -20,7 +20,7 @@ void hck_log(int level, const char *fmt, ...){
 	char errbuf[1024];
 	
 	va_list args;
-    va_start(args, format);
+    va_start(args, fmt);
     vsprintf(errbuf, fmt, args);
     va_end(args);
 	
