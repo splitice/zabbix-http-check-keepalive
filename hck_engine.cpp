@@ -50,6 +50,38 @@ volatile int running = 1;
 
 using namespace std;
 
+
+/*
+ * Copy src to string dst of size siz.  At most siz-1 characters
+ * will be copied.  Always NUL terminates (unless siz == 0).
+ * Returns strlen(src); if retval >= siz, truncation occurred.
+ */
+size_t
+hck_strlcpy(char *dst, const char *src, size_t siz)
+{
+        char *d = dst;
+        const char *s = src;
+        size_t n = siz;
+
+        /* Copy as many bytes as will fit */
+        if (n != 0 && --n != 0) {
+                do {
+                        if ((*d++ = *s++) == 0)
+                                break;
+                } while (--n != 0);
+        }
+
+        /* Not enough room in dst, add NUL and traverse rest of src */
+        if (n == 0) {
+                if (siz != 0)
+                        *d = '\0';                /* NUL-terminate dst */
+                while (*s++)
+                        ;
+        }
+
+        return(s - src - 1);        /* count does not include NUL */
+}
+
 struct cmp_map {
 	bool operator()(
 		const struct sockaddr& lhs,
@@ -598,7 +630,7 @@ int create_listener(){
 
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	strlcpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+	hck_strlcpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
 
 	unlink(socket_path);
 
@@ -805,7 +837,7 @@ int connect_to_hck(){
 	//setup unix socket address
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	strlcpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+	hck_strlcpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
 
 	//connect to unix socket
 	if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
