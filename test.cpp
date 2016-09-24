@@ -58,7 +58,7 @@ TEST_CASE( "IPv4 Test to Offline Host" ) {
 	}
 }
 
-TEST_CASE( "IPv4 Test to Online Host" ) {
+TEST_CASE( "IPv6 Test to Online Host" ) {
     start_engine();
 	int fd = connect_to_hck();
 	
