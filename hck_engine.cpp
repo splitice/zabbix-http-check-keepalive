@@ -667,12 +667,12 @@ Main loop for processing check requests
 void main_thread(){
 	int n;
 	hck_handle hck;
-	time_t now;
-	time_t lasttime;
+	time_t now = 0;
+	time_t lasttime = 0;
 	int fd;
 
 	struct epoll_event events[MAXEVENTS];
-	struct epoll_event e;
+	struct epoll_event e = { 0 };
 	struct hck_details* h;
 
 	hck.epfd = epoll_create(1024);
@@ -774,10 +774,9 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 	int rc;
 	unsigned short result;
 	struct addrinfo hints;
-	struct addrinfo *servinfo;  // will point to the results
+	struct addrinfo *servinfo = NULL;  // will point to the results
 
 	memset(&hints, 0, sizeof hints); // make sure the struct is empty
-	memset(&servinfo, 0, sizeof servinfo); // make sure the struct is empty
 
 	hints.ai_family = AF_UNSPEC;     // don't care IPv4 or IPv6
 	hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
@@ -787,7 +786,6 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 		perror("get addr info failed");
 		return 4;
 	}
-	
 	
 	rc = send(fd, (void*)servinfo, sizeof(addrinfo), 0);
 	if (rc < 0) {
@@ -799,7 +797,6 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 
 	rc = send(fd, (void*)servinfo->ai_addr, servinfo->ai_addrlen, 0);
 	if (rc < 0){
-		freeaddrinfo(servinfo); // free the linked-list
 		perror("io error during send (1)");
 		return 4;
 	}
