@@ -113,7 +113,7 @@ extern "C" {
 			res = 1;
 		}
 
-		SET_U64_RESULT(result, res);
+		SET_UI64_RESULT(result, res);
 
 		return SYSINFO_RET_OK;
 	}

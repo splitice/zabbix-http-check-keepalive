@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <sys/prctl.h>
+#include <sys/time.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <netdb.h>
@@ -43,6 +44,8 @@ int http_resp_startlen = sizeof("HTTP/1.0 ");//or "HTTP 1.1" same length
 #define LOG_LEVEL_INFORMATION   127     /* printing in any case no matter what level set */
 
 
+#define hck_sa(hck) inet_ntoa(((sockaddr_in*)&hck->remote_connection)->sin_addr), ((sockaddr_in*)&hck->remote_connection)->sin_port
+
 void hck_log(int level, const char *fmt, ...);
 
 extern const char *socket_path;
@@ -50,6 +53,18 @@ volatile int running = 1;
 
 using namespace std;
 
+
+static void linger_close(int socket){
+	linger lin;
+	unsigned int y = sizeof(lin);
+	lin.l_onoff = 1;
+	lin.l_linger = 10;
+	setsockopt(socket, SOL_SOCKET, SO_LINGER, (void*)(&lin), y);
+
+	//Close client socket
+	shutdown(socket, SHUT_RDWR);
+	close(socket);
+}
 
 /*
  * Copy src to string dst of size siz.  At most siz-1 characters
@@ -126,8 +141,6 @@ bool send_result(hck_handle* hck, int sock, double result){
 	if (sock == -1) {
 		return true;
 	}
-
-	result /= 1000;
 
 	// Actually send result
 	int rc = send(sock, &result, sizeof(result), 0);
@@ -282,11 +295,11 @@ static double decimal_time(){
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 
-	return tv.tv_sec + (tv.tv_usec) / 1000;
+	return tv.tv_sec + ((double)tv.tv_usec / 1000000) ;
 }
 
 // add a check in the worker
-bool check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_storage sockaddr, time_t now, int source, bool tfo = true){
+static void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_storage sockaddr, time_t now, int source, bool tfo = true){
 	struct hck_details* h;
 
 	h = keepalive_lookup(hck, addr.ai_addrlen, sockaddr, now, source);
@@ -297,21 +310,14 @@ bool check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_storage so
 		if (h != NULL) {
 			//Assert that socket entries are cleaned up when sockets are closed
 			assert(hck->sockets.find(h->remote_socket) == hck->sockets.end());
-			assert(h->client_socket == source);
 			hck->sockets[h->remote_socket] = h;
-			return true;
 		}
-	}
-	else
-	{
+	}else{
 		assert(hck->sockets[h->remote_socket] == h);
-		assert(h->client_socket == source);
-		return true;
 	}
 
+	assert(h->client_socket == source);
 	h->started = decimal_time();
-
-	return false;
 }
 
 static void http_cleanup(hck_handle& hck, struct hck_details* h){
@@ -332,18 +338,14 @@ static void http_cleanup(hck_handle& hck, struct hck_details* h){
 		assert(erased == 1);
 		shutdown(h->remote_socket, SHUT_RDWR);
 		close(h->remote_socket);
+		h->remote_socket = -1;
 	}
 
-
-	linger lin;
-	unsigned int y = sizeof(lin);
-	lin.l_onoff = 1;
-	lin.l_linger = 10;
-	setsockopt(h->client_socket, SOL_SOCKET, SO_LINGER, (void*)(&lin), y);
-
-	//Close client socket
-	shutdown(h->client_socket, SHUT_RDWR);
-	close(h->client_socket);
+	// Cleanup client socket
+	if(h->client_socket != -1) {
+		linger_close(h->client_socket);
+		h->client_socket = -1;
+	}
 
 	//Finally free memory
 	delete h;
@@ -364,7 +366,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 			rc = epoll_ctl(hck.epfd, EPOLL_CTL_MOD, e.data.fd, &e);
 			if (rc < 0)
 			{
-				hck_log(LOG_LEVEL_WARNING, "Unable to mod epoll: %s", strerror(errno));
+				hck_log(LOG_LEVEL_WARNING, "Unable to mod epoll: %s (%d)", strerror(errno), errno);
 			}
 			h->state = hck_details::writing;
 		}
@@ -396,12 +398,12 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	/* An error has occured on the socket, time to cleanup */
 	if (e.events & EPOLLERR){
 		if (h->state == hck_details::keepalive){
-			hck_log(LOG_LEVEL_WARNING, "Closing HTTP keepalive connection due to error");
+			hck_log(LOG_LEVEL_WARNING, "Closing HTTP keepalive connection %s:%d due to error", hck_sa(h));
 			http_cleanup(hck, h);
 		}
 		else{
 			recv(e.data.fd, 0, 0, 0);
-			hck_log(LOG_LEVEL_WARNING, "Sending failure due to error: %s", strerror(errno));
+			hck_log(LOG_LEVEL_WARNING, "Sending failure for %s:%d due to error: %s (%d)", hck_sa(h), strerror(errno), errno);
 			goto send_failure;
 		}
 		return;
@@ -530,7 +532,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	return;
 
 send_ok:
-	if (!send_result(&hck, h->client_socket, decimal_time() - h->started())){
+	if (!send_result(&hck, h->client_socket, decimal_time() - h->started)){
 		hck_log(LOG_LEVEL_WARNING, "Failed to send ok: %s", strerror(errno));
 		http_cleanup(hck, h);
 		return;
@@ -574,7 +576,7 @@ static bool read_all(int socket, char* ptr, int required)
 	do {
 		rc = recv(socket, ptr, required, MSG_WAITALL);
 		if (rc == -1 || rc == 0) {
-			close(socket);
+			linger_close(socket);
 			return false;
 		}
 		ptr += rc;
@@ -596,10 +598,7 @@ void handle_internalsock(hck_handle& hck, int socket, time_t now){
 	//read sockaddr
 	if (!read_all(socket, (char*)&s, servinfo.ai_addrlen)) return;
 	
-	if (!check_add(&hck, servinfo, s, now, socket)) {
-		//close on error
-		close(socket);
-	}
+	check_add(&hck, servinfo, s, now, socket);
 }
 
 void handle_cleanup(hck_handle& hck, time_t now){
@@ -821,7 +820,7 @@ double execute_check(int fd, const char* addr, const char* port, bool retry){
 	do {
 		rc = recv(fd, ptr, required, MSG_WAITALL);
 		if (rc == 0){
-			hck_log(LOG_LEVEL_WARNING, "io error during recv[1] to %s:%s: no more data", addr, port);
+			hck_log(LOG_LEVEL_WARNING, "io error during recv[1] to %s:%s: no more data (wanted %d)", addr, port, required);
 			return 4;
 		}
 		if (rc == -1){
