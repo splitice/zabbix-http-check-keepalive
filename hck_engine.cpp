@@ -94,6 +94,7 @@ struct cmp_map {
 // a check
 struct hck_details {
 	time_t expires;
+	double started;
 	int client_socket;
 	int remote_socket;
 	struct sockaddr_storage remote_connection;
@@ -120,11 +121,13 @@ public:
 };
 
 //send result from worker -> process
-bool send_result(hck_handle* hck, int sock, unsigned short result){
+bool send_result(hck_handle* hck, int sock, double result){
 	//Communication socket failed!
 	if (sock == -1) {
 		return true;
 	}
+
+	result /= 1000;
 
 	// Actually send result
 	int rc = send(sock, &result, sizeof(result), 0);
@@ -275,6 +278,13 @@ error:
 	return NULL;
 }
 
+static double decimal_time(){
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+
+	return tv.tv_sec + (tv.tv_usec) / 1000;
+}
+
 // add a check in the worker
 bool check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_storage sockaddr, time_t now, int source, bool tfo = true){
 	struct hck_details* h;
@@ -298,6 +308,8 @@ bool check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_storage so
 		assert(h->client_socket == source);
 		return true;
 	}
+
+	h->started = decimal_time();
 
 	return false;
 }
@@ -518,7 +530,7 @@ void handle_http(hck_handle& hck, struct epoll_event e, time_t now){
 	return;
 
 send_ok:
-	if (!send_result(&hck, h->client_socket, 1)){
+	if (!send_result(&hck, h->client_socket, decimal_time() - h->started())){
 		hck_log(LOG_LEVEL_WARNING, "Failed to send ok: %s", strerror(errno));
 		http_cleanup(hck, h);
 		return;
@@ -551,7 +563,7 @@ send_failure:
 	http_cleanup(hck, h);
 	return;
 send_retry:
-	send_result(&hck, h->client_socket, 3);
+	send_result(&hck, h->client_socket, -3);
 	http_cleanup(hck, h);
 	return;
 }
@@ -607,7 +619,7 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		h = hck.sockets[*it];
 
 		if (h->state != hck_details::keepalive){
-			send_result(&hck, h->client_socket, false);
+			send_result(&hck, h->client_socket, 0);
 		}
 		
 		int erased = hck.sockets.erase(idx);
@@ -766,9 +778,9 @@ cleanup:
 	}
 }
 
-unsigned short execute_check(int fd, const char* addr, const char* port, bool retry){
+double execute_check(int fd, const char* addr, const char* port, bool retry){
 	int rc;
-	unsigned short result;
+	double result;
 	struct addrinfo hints;
 	struct addrinfo *servinfo = NULL;  // will point to the results
 
@@ -820,7 +832,7 @@ unsigned short execute_check(int fd, const char* addr, const char* port, bool re
 		ptr += rc;
 	} while (required);
 
-	if (result == 3){
+	if (result == -3){
 		if (!retry){
 			return 0;
 		}
