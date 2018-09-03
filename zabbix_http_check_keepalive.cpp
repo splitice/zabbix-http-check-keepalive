@@ -8,6 +8,7 @@ extern "C" {
 	#include "common.h"
 	#include "log.h"
 	int    zbx_module_hck_check(AGENT_REQUEST *request, AGENT_RESULT *result);
+	int    zbx_module_hck_latency(AGENT_REQUEST *request, AGENT_RESULT *result);
 }
 
 
@@ -15,6 +16,7 @@ static ZBX_METRIC keys[] =
 /* KEY               FLAG           FUNCTION                TEST PARAMETERS */
 {
 	{ "hck.check", CF_HAVEPARAMS, (int(*)())zbx_module_hck_check, "203.13.161.80,80" },
+	{ "hck.latency", CF_HAVEPARAMS, (int(*)())zbx_module_hck_latency, "203.13.161.80,80" },
 	{ NULL }
 };
 
@@ -77,7 +79,7 @@ extern "C" {
 
 	int    zbx_module_hck_check(AGENT_REQUEST *request, AGENT_RESULT *result)
 	{
-		unsigned short res;
+		double res;
 		char *param1, *param2;
 		char buffer[1];
 
@@ -102,17 +104,60 @@ extern "C" {
 		res = execute_check(hck_fd, param1, param2);
 
 		//an error occured
-		if (res > 1){
+		if (res < 0){
+			close(hck_fd);
+			hck_fd = -1;
+
+			res = 0;
+		} else if (res > 0){
+			res = 1;
+		}
+
+		SET_U64_RESULT(result, res);
+
+		return SYSINFO_RET_OK;
+	}
+
+	
+	int    zbx_module_hck_latency(AGENT_REQUEST *request, AGENT_RESULT *result)
+	{
+		double res;
+		char *param1, *param2;
+		char buffer[1];
+
+		if (hck_fd == -1)
+		{
+			hck_fd = connect_to_hck();
+		}
+		else if (send(hck_fd, &buffer, 0, 0) == -1)
+		{
+			close(hck_fd);
+			hck_fd = connect_to_hck();
+		}
+
+		if (hck_fd == -1){
+			SET_MSG_RESULT(result, strdup("Unable to connect to worker process"));
+			return SYSINFO_RET_FAIL;
+		}
+
+		param1 = get_rparam(request, 0);
+		param2 = get_rparam(request, 1);
+
+		res = execute_check(hck_fd, param1, param2);
+
+		//an error occured
+		if (res < 0){
 			close(hck_fd);
 			hck_fd = -1;
 
 			res = 0;
 		}
 
-		SET_UI64_RESULT(result, res);
+		SET_DBL_RESULT(result, res);
 
 		return SYSINFO_RET_OK;
 	}
+
 
 	/******************************************************************************
 	*                                                                            *
