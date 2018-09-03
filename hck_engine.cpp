@@ -624,7 +624,7 @@ void handle_cleanup(hck_handle& hck, time_t now){
 		int erased = hck.sockets.erase(idx);
 		assert(erased == 1);
 
-		close(h->client_socket);
+		linger_close(h->client_socket);
 		close(h->remote_socket);
 		delete h;
 	}
