@@ -298,30 +298,6 @@ static double decimal_time(){
 	return tv.tv_sec + ((double)tv.tv_usec / 1000000) ;
 }
 
-// add a check in the worker
-static void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_storage sockaddr, time_t now, int source, bool tfo = true){
-	struct hck_details* h;
-
-	h = keepalive_lookup(hck, addr.ai_addrlen, sockaddr, now, source);
-
-	if (h == NULL) {
-		h = create_new_hck(hck, addr.ai_addrlen, sockaddr, now, source, tfo);
-
-		if (h != NULL) {
-			//We hope that socket entries are cleaned up when sockets are closed, sometimes however they are not
-			if(hck->sockets.find(h->remote_socket) != hck->sockets.end()){
-				http_cleanup(*h, hck->sockets[h->remote_socket]);
-			}
-			hck->sockets[h->remote_socket] = h;
-		}
-	}else{
-		assert(hck->sockets[h->remote_socket] == h);
-	}
-
-	assert(h->client_socket == source);
-	h->started = decimal_time();
-}
-
 static void http_cleanup(hck_handle& hck, struct hck_details* h){
 	int erased;
 
@@ -351,6 +327,30 @@ static void http_cleanup(hck_handle& hck, struct hck_details* h){
 
 	//Finally free memory
 	delete h;
+}
+
+// add a check in the worker
+static void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_storage sockaddr, time_t now, int source, bool tfo = true){
+	struct hck_details* h;
+
+	h = keepalive_lookup(hck, addr.ai_addrlen, sockaddr, now, source);
+
+	if (h == NULL) {
+		h = create_new_hck(hck, addr.ai_addrlen, sockaddr, now, source, tfo);
+
+		if (h != NULL) {
+			//We hope that socket entries are cleaned up when sockets are closed, sometimes however they are not
+			if(hck->sockets.find(h->remote_socket) != hck->sockets.end()){
+				http_cleanup(*h, hck->sockets[h->remote_socket]);
+			}
+			hck->sockets[h->remote_socket] = h;
+		}
+	}else{
+		assert(hck->sockets[h->remote_socket] == h);
+	}
+
+	assert(h->client_socket == source);
+	h->started = decimal_time();
 }
 
 // handle a http event
