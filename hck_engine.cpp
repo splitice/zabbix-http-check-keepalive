@@ -341,7 +341,7 @@ static void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_sto
 		if (h != NULL) {
 			//We hope that socket entries are cleaned up when sockets are closed, sometimes however they are not
 			if(hck->sockets.find(h->remote_socket) != hck->sockets.end()){
-				http_cleanup(*h, hck->sockets[h->remote_socket]);
+				http_cleanup(*hck, hck->sockets[h->remote_socket]);
 			}
 			hck->sockets[h->remote_socket] = h;
 		}
