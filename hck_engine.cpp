@@ -308,8 +308,10 @@ static void check_add(hck_handle* hck, struct addrinfo addr, struct sockaddr_sto
 		h = create_new_hck(hck, addr.ai_addrlen, sockaddr, now, source, tfo);
 
 		if (h != NULL) {
-			//Assert that socket entries are cleaned up when sockets are closed
-			assert(hck->sockets.find(h->remote_socket) == hck->sockets.end());
+			//We hope that socket entries are cleaned up when sockets are closed, sometimes however they are not
+			if(hck->sockets.find(h->remote_socket) != hck->sockets.end()){
+				http_cleanup(*h, hck->sockets[h->remote_socket]);
+			}
 			hck->sockets[h->remote_socket] = h;
 		}
 	}else{
