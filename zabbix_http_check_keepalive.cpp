@@ -1,36 +1,38 @@
-#include "sysinc.h"
-#include "module.h"
-#include "hck_engine.h"
-
 const char *socket_path = "\0hck";
+
+extern "C" {
+	#include "sysinc.h"
+	#include "module.h"
+}
+
+#include "hck_engine.h"
 
 extern "C" {
 	#include "common.h"
 	#include "log.h"
 	int    zbx_module_hck_check(AGENT_REQUEST *request, AGENT_RESULT *result);
 	int    zbx_module_hck_latency(AGENT_REQUEST *request, AGENT_RESULT *result);
+
+
+	static ZBX_METRIC keys[] =
+	/* KEY               FLAG           FUNCTION                TEST PARAMETERS */
+	{
+		{ "hck.check", CF_HAVEPARAMS, zbx_module_hck_check, "203.13.161.80,80" },
+		{ "hck.latency", CF_HAVEPARAMS, zbx_module_hck_latency, "203.13.161.80,80" },
+		{ NULL }
+	};
 }
 
-
-static ZBX_METRIC keys[] =
-/* KEY               FLAG           FUNCTION                TEST PARAMETERS */
-{
-	{ "hck.check", CF_HAVEPARAMS, (int(*)())zbx_module_hck_check, "203.13.161.80,80" },
-	{ "hck.latency", CF_HAVEPARAMS, (int(*)())zbx_module_hck_latency, "203.13.161.80,80" },
-	{ NULL }
-};
-
-void hck_log(int level, const char *fmt, ...){
-	char errbuf[1024];
-	
-	va_list args;
-    va_start(args, fmt);
-    zbx_vsnprintf(errbuf, sizeof(errbuf), fmt, args);
-    va_end(args);
-	
-	zabbix_log(level, "%s", errbuf);
-}
-
+	void hck_log(int level, const char *fmt, ...){
+		char errbuf[1024];
+		
+		va_list args;
+		va_start(args, fmt);
+		zbx_vsnprintf(errbuf, sizeof(errbuf), fmt, args);
+		va_end(args);
+		
+		zabbix_log(level, "%s", errbuf);
+	}
 
 extern "C" {
 	/******************************************************************************
